@@ -1,0 +1,17 @@
+{
+  "_fixture_purpose": "Fully compliant layout — expect zero violations, score 100.",
+  "plot": {
+    "shape": "rectangle",
+    "floor_slope": { "high_corner": "SW", "low_corner": "NE" },
+    "brahmasthan_obstructed": false
+  },
+  "rooms": [
+    { "name": "MainEntrance", "zone": "N" },
+    { "name": "Kitchen", "zone": "SE" },
+    { "name": "MasterBedroom", "zone": "SW" },
+    { "name": "LivingRoom", "zone": "N" },
+    { "name": "Toilet", "zone": "NW" },
+    { "name": "PoojaRoom", "zone": "NE", "adjacency_flags": [] },
+    { "name": "Staircase", "zone": "S" }
+  ]
+}

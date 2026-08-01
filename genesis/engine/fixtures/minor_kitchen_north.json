@@ -1,0 +1,12 @@
+{
+  "_fixture_purpose": "Minor violation — Kitchen in N zone. Schema notes sources disagree on whether N is 'forbidden' or just 'not ideal' for kitchens, so it's flagged as minor here rather than major.",
+  "plot": {
+    "shape": "rectangle",
+    "floor_slope": { "high_corner": "SW", "low_corner": "NE" },
+    "brahmasthan_obstructed": false
+  },
+  "rooms": [
+    { "name": "MainEntrance", "zone": "E" },
+    { "name": "Kitchen", "zone": "N" }
+  ]
+}

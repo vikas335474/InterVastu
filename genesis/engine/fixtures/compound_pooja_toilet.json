@@ -1,0 +1,12 @@
+{
+  "_fixture_purpose": "Compound adjacency violation — PoojaRoom zone itself is fine (NE, preferred), but it shares a wall with the Toilet. Schema flags this as a structural adjacency constraint separate from the zone check, and calls it one of the worst compound defects (sources unanimous: relocation recommended over cosmetic remedy).",
+  "plot": {
+    "shape": "rectangle",
+    "floor_slope": { "high_corner": "SW", "low_corner": "NE" },
+    "brahmasthan_obstructed": false
+  },
+  "rooms": [
+    { "name": "PoojaRoom", "zone": "NE", "adjacency_flags": ["shares_wall_with_toilet"] },
+    { "name": "Toilet", "zone": "NW" }
+  ]
+}

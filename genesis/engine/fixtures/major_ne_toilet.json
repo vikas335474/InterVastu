@@ -1,0 +1,13 @@
+{
+  "_fixture_purpose": "Major-severity violation — Toilet in NE zone. Schema treats NE toilet as major, unanimous-forbidden across sources, no full remedy (mitigation only).",
+  "plot": {
+    "shape": "rectangle",
+    "floor_slope": { "high_corner": "SW", "low_corner": "NE" },
+    "brahmasthan_obstructed": false
+  },
+  "rooms": [
+    { "name": "MainEntrance", "zone": "N" },
+    { "name": "Toilet", "zone": "NE" },
+    { "name": "Kitchen", "zone": "SE" }
+  ]
+}
