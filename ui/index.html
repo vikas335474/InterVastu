@@ -22,12 +22,24 @@
   .counts span { margin-right: 1.5rem; }
   footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: 0.8rem; color: #888; }
   .remove-btn { color: #c0392b; }
+  .flat-row { display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #eee; }
+  .flat-row .meta { color: #777; font-size: 0.85rem; flex: 1; }
+  .flat-row button { font-size: 0.8rem; }
+  #save-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
+  #save-row input[type=text] { padding: 0.35rem; }
+  #save-status { font-size: 0.85rem; color: #2e7d32; }
 </style>
 </head>
 <body>
 
 <h1>Vastu Audit Engine — Local Test UI</h1>
-<p class="muted">Manual test harness over the existing audit engine. No data is saved.</p>
+<p class="muted">Manual test harness over the existing audit engine. Save a flat to keep it and its audit history.</p>
+
+<fieldset>
+  <legend>Saved flats</legend>
+  <label>Your name/owner label: <input type="text" id="owner-name" placeholder="e.g. vikas"></label>
+  <div id="flats-list" class="muted">Loading…</div>
+</fieldset>
 
 <fieldset>
   <legend>Plot</legend>
@@ -50,7 +62,15 @@
   <button id="add-room-btn" type="button">+ Add room</button>
 </fieldset>
 
-<button id="audit-btn" type="button">Audit</button>
+<button id="audit-btn" type="button">Audit (no save)</button>
+
+<div id="save-row">
+  <input type="text" id="flat-label" placeholder="Flat label (e.g. Unit 12)">
+  <input type="text" id="version-note" placeholder="Note for this version (optional)">
+  <button id="save-new-btn" type="button">Save as new flat</button>
+  <button id="save-version-btn" type="button" disabled>Save as new version of loaded flat</button>
+  <span id="save-status"></span>
+</div>
 
 <div id="results"></div>
 
@@ -62,6 +82,7 @@
 <script>
 let schemaInfo = null;
 let roomIdCounter = 0;
+let loadedFlatId = null;
 
 async function loadSchemaInfo() {
   const resp = await fetch('/schema-info');
@@ -199,9 +220,144 @@ async function runAudit() {
   renderResults(result);
 }
 
+// --- Persistence: save / list / load flats -------------------------------
+
+function setSaveStatus(msg, isError) {
+  const el = document.getElementById('save-status');
+  el.textContent = msg;
+  el.style.color = isError ? '#c0392b' : '#2e7d32';
+}
+
+function ownerName() {
+  return document.getElementById('owner-name').value.trim();
+}
+
+async function loadFlatsList() {
+  const resp = await fetch('/flats');
+  const flats = await resp.json();
+  renderFlatsList(flats);
+}
+
+function renderFlatsList(flats) {
+  const el = document.getElementById('flats-list');
+  if (!flats.length) {
+    el.innerHTML = '<p class="muted">No saved flats yet.</p>';
+    return;
+  }
+  el.innerHTML = flats.map(f => `
+    <div class="flat-row">
+      <strong>${f.label}</strong>
+      <span class="meta">
+        owner: ${f.owner} · v${f.latest_version} · score ${f.latest_compliance_score}
+        (${f.latest_major_count} major, ${f.latest_minor_count} minor)
+      </span>
+      <button type="button" class="load-flat-btn" data-id="${f.id}">Load</button>
+    </div>
+  `).join('');
+  el.querySelectorAll('.load-flat-btn').forEach(btn => {
+    btn.addEventListener('click', () => loadFlatIntoForm(btn.dataset.id));
+  });
+}
+
+async function loadFlatIntoForm(flatId) {
+  const resp = await fetch(`/flats/${flatId}`);
+  if (!resp.ok) {
+    setSaveStatus('Could not load that flat.', true);
+    return;
+  }
+  const flat = await resp.json();
+  const latest = flat.versions[flat.versions.length - 1];
+
+  populateFormFromInput(latest.input);
+  document.getElementById('flat-label').value = flat.label;
+  document.getElementById('owner-name').value = flat.owner;
+  document.getElementById('version-note').value = '';
+
+  loadedFlatId = flat.id;
+  document.getElementById('save-version-btn').disabled = false;
+  setSaveStatus(`Loaded "${flat.label}" (v${latest.version_number}, ${flat.versions.length} version(s) total). Edit and save to add a new version.`, false);
+
+  renderResults(latest.result);
+}
+
+function populateFormFromInput(input) {
+  const plot = input.plot || {};
+  document.getElementById('plot-shape').value = plot.shape || '';
+  document.getElementById('brahmasthan-obstructed').checked = !!plot.brahmasthan_obstructed;
+  document.getElementById('obstruction-type-wrap').style.display = plot.brahmasthan_obstructed ? 'inline' : 'none';
+  document.getElementById('obstruction-type').value = plot.brahmasthan_obstruction_type || '';
+
+  document.getElementById('rooms-container').innerHTML = '';
+  (input.rooms || []).forEach(room => {
+    addRoomRow();
+    const row = document.querySelector('.room-row:last-child');
+    row.querySelector('.room-type').value = room.name;
+    updateFlags(row);
+    row.querySelector('.room-zone').value = room.zone || '';
+    (room.adjacency_flags || []).forEach(flag => {
+      const cb = row.querySelector(`.adjacency-flag[value="${flag}"]`);
+      if (cb) cb.checked = true;
+    });
+  });
+  if (!(input.rooms || []).length) addRoomRow();
+}
+
+async function saveNewFlat() {
+  const label = document.getElementById('flat-label').value.trim();
+  const owner = ownerName();
+  if (!label || !owner) {
+    setSaveStatus('Owner name and a flat label are both required to save.', true);
+    return;
+  }
+  const layout = assembleLayout();
+  const payload = { ...layout, label, owner, note: document.getElementById('version-note').value.trim() || null };
+
+  const resp = await fetch('/flats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    setSaveStatus('Save failed.', true);
+    return;
+  }
+  const body = await resp.json();
+  loadedFlatId = body.flat_id;
+  document.getElementById('save-version-btn').disabled = false;
+  setSaveStatus(`Saved as new flat #${body.flat_id}, version ${body.version}.`, false);
+  renderResults(body.result);
+  loadFlatsList();
+}
+
+async function saveVersion() {
+  if (!loadedFlatId) {
+    setSaveStatus('Load or save a flat first.', true);
+    return;
+  }
+  const layout = assembleLayout();
+  const payload = { ...layout, note: document.getElementById('version-note').value.trim() || null };
+
+  const resp = await fetch(`/flats/${loadedFlatId}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    setSaveStatus('Save failed.', true);
+    return;
+  }
+  const body = await resp.json();
+  setSaveStatus(`Saved as version ${body.version} of flat #${loadedFlatId}.`, false);
+  renderResults(body.result);
+  loadFlatsList();
+}
+
 document.getElementById('audit-btn').addEventListener('click', runAudit);
+document.getElementById('save-new-btn').addEventListener('click', saveNewFlat);
+document.getElementById('save-version-btn').addEventListener('click', saveVersion);
 
 loadSchemaInfo();
+loadFlatsList();
 </script>
 
 </body>
