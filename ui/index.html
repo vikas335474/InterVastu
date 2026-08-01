@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vastu Audit Engine — Local Test UI</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; }
+  fieldset { margin-bottom: 1.5rem; }
+  .room-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .room-row select { padding: 0.25rem; }
+  .flags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.85rem; }
+  button { cursor: pointer; padding: 0.35rem 0.8rem; }
+  #audit-btn { font-size: 1rem; padding: 0.5rem 1.2rem; margin-top: 1rem; }
+  .muted { color: #777; font-size: 0.85rem; }
+  .score-line { font-size: 1.3rem; font-weight: bold; margin-top: 1rem; }
+  .violation { border-left: 4px solid #ccc; padding: 0.5rem 0.75rem; margin: 0.5rem 0; background: #fafafa; }
+  .violation.major { border-color: #c0392b; background: #fdecea; }
+  .violation.minor { border-color: #d68910; background: #fef5e7; }
+  .warning { border-left: 4px solid #7f8c8d; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
+  .counts span { margin-right: 1.5rem; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: 0.8rem; color: #888; }
+  .remove-btn { color: #c0392b; }
+</style>
+</head>
+<body>
+
+<h1>Vastu Audit Engine — Local Test UI</h1>
+<p class="muted">Manual test harness over the existing audit engine. No data is saved.</p>
+
+<fieldset>
+  <legend>Plot</legend>
+  <label>Shape:
+    <select id="plot-shape"></select>
+  </label>
+  <br><br>
+  <label>
+    <input type="checkbox" id="brahmasthan-obstructed">
+    Brahmasthan (plot center) obstructed
+  </label>
+  <span id="obstruction-type-wrap" style="display:none; margin-left:1rem;">
+    <label>Obstruction type: <input type="text" id="obstruction-type" placeholder="e.g. toilet, staircase, pillar"></label>
+  </span>
+</fieldset>
+
+<fieldset>
+  <legend>Rooms</legend>
+  <div id="rooms-container"></div>
+  <button id="add-room-btn" type="button">+ Add room</button>
+</fieldset>
+
+<button id="audit-btn" type="button">Audit</button>
+
+<div id="results"></div>
+
+<footer>
+  Educational tool. Based on draft rule schema v0.2 pending consultant sign-off.
+  Vastu is a traditional belief system, not empirically validated.
+</footer>
+
+<script>
+let schemaInfo = null;
+let roomIdCounter = 0;
+
+async function loadSchemaInfo() {
+  const resp = await fetch('/schema-info');
+  schemaInfo = await resp.json();
+
+  const shapeSelect = document.getElementById('plot-shape');
+  const shapes = [...schemaInfo.plot_shapes.preferred, ...schemaInfo.plot_shapes.forbidden];
+  shapeSelect.innerHTML = shapes.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  document.getElementById('brahmasthan-obstructed').addEventListener('change', (e) => {
+    document.getElementById('obstruction-type-wrap').style.display = e.target.checked ? 'inline' : 'none';
+  });
+
+  document.getElementById('add-room-btn').addEventListener('click', addRoomRow);
+  addRoomRow();
+}
+
+function addRoomRow() {
+  const id = roomIdCounter++;
+  const container = document.getElementById('rooms-container');
+  const row = document.createElement('div');
+  row.className = 'room-row';
+  row.dataset.id = id;
+
+  const roomOptions = schemaInfo.room_types.map(r => `<option value="${r}">${r}</option>`).join('');
+  const zoneOptions = schemaInfo.zones.map(z => `<option value="${z}">${z}</option>`).join('');
+
+  row.innerHTML = `
+    <select class="room-type">${roomOptions}</select>
+    <select class="room-zone">${zoneOptions}</select>
+    <span class="flags"></span>
+    <button type="button" class="remove-btn">Remove</button>
+  `;
+
+  container.appendChild(row);
+
+  const typeSelect = row.querySelector('.room-type');
+  typeSelect.addEventListener('change', () => updateFlags(row));
+  row.querySelector('.remove-btn').addEventListener('click', () => row.remove());
+
+  updateFlags(row);
+}
+
+function updateFlags(row) {
+  const roomType = row.querySelector('.room-type').value;
+  const details = schemaInfo.room_type_details[roomType];
+  const flagsSpan = row.querySelector('.flags');
+  const flags = (details && details.adjacency_flags) || [];
+
+  flagsSpan.innerHTML = flags.map(f => `
+    <label><input type="checkbox" class="adjacency-flag" value="${f}"> ${f}</label>
+  `).join('');
+}
+
+function assembleLayout() {
+  const plot = {
+    shape: document.getElementById('plot-shape').value,
+    brahmasthan_obstructed: document.getElementById('brahmasthan-obstructed').checked,
+  };
+  const obstructionType = document.getElementById('obstruction-type').value.trim();
+  if (plot.brahmasthan_obstructed && obstructionType) {
+    plot.brahmasthan_obstruction_type = obstructionType;
+  }
+
+  const rooms = [];
+  document.querySelectorAll('.room-row').forEach(row => {
+    const name = row.querySelector('.room-type').value;
+    const zone = row.querySelector('.room-zone').value;
+    const adjacency_flags = [...row.querySelectorAll('.adjacency-flag:checked')].map(cb => cb.value);
+    const room = { name, zone };
+    if (adjacency_flags.length) room.adjacency_flags = adjacency_flags;
+    rooms.push(room);
+  });
+
+  return { plot, rooms };
+}
+
+function severityClass(severity) {
+  if (severity === 'major') return 'major';
+  if (severity === 'minor') return 'minor';
+  return '';
+}
+
+function renderResults(result) {
+  const el = document.getElementById('results');
+
+  let html = '';
+  html += `<h2>Results</h2>`;
+  html += `<div class="counts">
+    <span>Major violations: <strong>${result.major_count}</strong></span>
+    <span>Minor violations: <strong>${result.minor_count}</strong></span>
+  </div>`;
+  html += `<div class="score-line">Compliance score: ${result.compliance_score} / 100</div>`;
+  html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.</p>`;
+
+  html += `<h3>Violations</h3>`;
+  const allViolations = [];
+  result.rooms.forEach(r => {
+    r.violations.forEach(v => {
+      if (v.severity) allViolations.push(v);
+    });
+  });
+  result.plot_level.forEach(v => allViolations.push(v));
+
+  if (allViolations.length === 0) {
+    html += `<p class="muted">No scored violations.</p>`;
+  } else {
+    allViolations.forEach(v => {
+      html += `<div class="violation ${severityClass(v.severity)}">
+        <strong>${v.room ? v.room : 'Plot'}</strong> — ${v.rule_type}: <em>${v.violation}</em>
+        (severity: ${v.severity})<br>
+        <span>${v.remedy || ''}</span>
+      </div>`;
+    });
+  }
+
+  if (result.unscored_warnings && result.unscored_warnings.length) {
+    html += `<h3>Unscored warnings</h3>`;
+    result.unscored_warnings.forEach(w => {
+      html += `<div class="warning"><strong>${w.room || ''}</strong> — ${w.rule_type}: ${w.message || ''}</div>`;
+    });
+  }
+
+  el.innerHTML = html;
+}
+
+async function runAudit() {
+  const layout = assembleLayout();
+  const resp = await fetch('/audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(layout),
+  });
+  const result = await resp.json();
+  renderResults(result);
+}
+
+document.getElementById('audit-btn').addEventListener('click', runAudit);
+
+loadSchemaInfo();
+</script>
+
+</body>
+</html>
