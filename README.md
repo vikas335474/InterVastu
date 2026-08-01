@@ -30,9 +30,21 @@ Microsoft Global ML Building Footprints and OSM Overpass lookups both take
 an injected query function, so the actual data-source wiring (S3 path,
 hosted tile server, Overpass endpoint, etc.) is supplied by the caller.
 
+Every result also carries a `north_offset_deg` value in `zone_geometry.py`'s
+own convention (true bearing of the floor plan's `+y` axis), currently a
+plain alias of `facade_bearing_deg` under the assumption that plan-up faces
+the detected/provided facade — see the module docstring for the caveat.
 Integration with the deterministic zone-assignment layer (`zone_geometry.py`)
 is intentionally out of scope here and happens in a later session, once both
 modules are independently tested.
+
+**Cost note for the later visual confirmation step:** Microsoft Global ML
+Building Footprints and OSM Overpass are both free data sources. The only
+thing that later "is this your building?" human-confirmation UI will need
+that isn't free-by-default is map **tiles** to render underneath the
+footprint outline (e.g. Google Maps or Mapbox) — both have usable free
+tiers, so this doesn't block anything now, but it's a real dependency to
+account for when that UI gets built.
 
 ## `genesis/engine/zone_geometry.py` — deterministic zone-assignment layer
 

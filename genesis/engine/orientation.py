@@ -33,6 +33,21 @@ Coordinate & bearing conventions
 * Compass bearings use the surveyor convention: **0 deg = true North**,
   increasing **clockwise** (90 = East, 180 = South, 270 = West), reported
   as a value in ``[0, 360)``.
+
+Connecting to ``zone_geometry.py``
+-----------------------------------
+Every result here also carries a ``north_offset_deg`` value, in the exact
+convention ``zone_geometry.analyze_zones()`` expects: the true compass
+bearing of the *floor plan's own* ``+y`` (plan-up) direction. This module
+assumes the floor plan is drawn with plan-up facing the detected/provided
+facade — i.e. ``north_offset_deg == facade_bearing_deg`` — so it is
+currently a plain alias, not an independent computation. That assumption is
+reasonable for a simple rectangular unit plan but may not hold once
+multi-wing/podium geometry or an unconventional plan orientation is in the
+mix; it is surfaced as its own field (rather than silently reused under the
+``facade_bearing_deg`` name) specifically so a later integration session can
+revisit it without a shape change. No integration with ``zone_geometry.py``
+happens in this module — that is a separate, later session.
 """
 
 from __future__ import annotations
@@ -215,6 +230,7 @@ def estimate_facade_bearing_from_footprint(
 
     return {
         "facade_bearing_deg": round(float(bearing), 6),
+        "north_offset_deg": round(float(bearing), 6),
         "source": "footprint_estimate",
         "reliability_note": FOOTPRINT_ESTIMATE_RELIABILITY_NOTE,
         "footprint_polygon": [(round(float(x), 6), round(float(y), 6)) for x, y in footprint_polygon],
@@ -247,6 +263,7 @@ def estimate_facade_bearing(
     if not footprint:
         return {
             "facade_bearing_deg": None,
+            "north_offset_deg": None,
             "source": "not_found",
             "reliability_note": NOT_FOUND_RELIABILITY_NOTE,
             "footprint_polygon": None,
@@ -272,6 +289,7 @@ def manual_facade_bearing(
     bearing = float(facade_bearing_deg) % 360.0
     return {
         "facade_bearing_deg": round(bearing, 6),
+        "north_offset_deg": round(bearing, 6),
         "source": "manual",
         "reliability_note": MANUAL_RELIABILITY_NOTE,
         "footprint_polygon": (
