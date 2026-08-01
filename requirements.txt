@@ -1,2 +1,2 @@
-# genesis/engine/vastu_audit.py (Phase 1a) uses only the Python standard
-# library — no dependencies yet. Extended as later phases add libraries.
+shapely>=2.0
+pytest>=7.0
