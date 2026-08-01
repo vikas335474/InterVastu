@@ -1,6 +1,8 @@
 # InterVastu
 
-## `orientation.py` — facade-orientation detection
+See `docs/build_plan.md` for the repo layout and phase status.
+
+## `genesis/engine/orientation.py` — facade-orientation detection
 
 Determines a building's true-north facade bearing from its footprint
 geometry, as an alternative to relying on a phone's magnetic compass
@@ -32,7 +34,7 @@ Integration with the deterministic zone-assignment layer (`zone_geometry.py`)
 is intentionally out of scope here and happens in a later session, once both
 modules are independently tested.
 
-## `zone_geometry.py` — deterministic zone-assignment layer
+## `genesis/engine/zone_geometry.py` — deterministic zone-assignment layer
 
 Assigns each room in a flat to one of the 16 Vastu compass sectors relative
 to the flat's true geometric centre (Brahmasthan), computed as the
