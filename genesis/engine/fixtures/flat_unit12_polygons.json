@@ -1,0 +1,26 @@
+{
+  "_note": "Real-flat fixture for Unit 12. Boundary and room coordinates are APPROXIMATE, traced from a sales brochure floor plan (+/- 2-3 ft tolerance), NOT as-built/surveyed dimensions. Do not treat these numbers as measured/precise; re-trace from an as-built survey before relying on this for anything beyond a demo/sanity run of the geometry-to-audit pipeline.",
+  "boundary": [[0, 0], [40, 0], [40, 27], [27, 27], [27, 41], [0, 41]],
+  "north_offset_deg": 2,
+  "_north_offset_note": "The flat's entrance/right (DRG) side was measured at ~92 deg true (East-ish) on the plan's +x axis, via a satellite-checked bearing (not a raw phone compass). The plan's +y (up) axis is therefore ~92 - 90 = 2 deg true, i.e. plan-up is ~2 deg east of true north.",
+  "rooms": [
+    { "name": "MasterBedroom", "polygon": [[2, 24], [14, 24], [14, 40], [2, 40]] },
+    { "name": "ChildrenBedroom", "polygon": [[15, 27], [27, 27], [27, 38.3], [15, 38.3]] },
+    { "name": "Toilet_master", "polygon": [[5, 20], [13, 20], [13, 25], [5, 25]] },
+    { "name": "Toilet_central", "polygon": [[16, 20], [24, 20], [24, 25], [16, 25]] },
+    { "name": "GuestBedroom", "polygon": [[0, 10], [12.7, 10], [12.7, 20], [0, 20]] },
+    {
+      "name": "LivingRoom",
+      "polygon": [[13, 12], [40, 12], [40, 22], [13, 22]],
+      "_note": "Clipped from the brochure rectangle 13,12,40.5,22 to x<=40 so it stays within the boundary (boundary max x is 40 for y<27)."
+    },
+    { "name": "Kitchen", "polygon": [[17, 0], [27.5, 0], [27.5, 10], [17, 10]] },
+    { "name": "DiningRoom_DRG", "polygon": [[28.7, 0], [40, 0], [40, 10], [28.7, 10]] },
+    { "name": "Toilet_guest", "polygon": [[0, 0], [5, 0], [5, 9], [0, 9]] },
+    {
+      "name": "MainEntrance",
+      "polygon": [[39, 5], [40, 5], [40, 7], [39, 7]],
+      "_note": "Small marker rectangle on the DRG east wall representing the entrance point, not a real room footprint."
+    }
+  ]
+}
