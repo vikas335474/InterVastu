@@ -187,6 +187,149 @@ def audit_plot_level(plot, schema):
     return violations
 
 
+# -------------------------------------------------------------------------
+# BRAHMASTHAN-OBSTRUCTION CHECK — bridges the zone_geometry region-overlap
+# output into scored/informational audit output. Additive: does not change
+# audit_room / audit_plot_level / audit_layout's existing behaviour when this
+# check isn't invoked (see audit_layout's geometry_results=None default).
+# -------------------------------------------------------------------------
+
+# --- ASSUMPTION: which room TYPES count as a Brahmasthan "obstruction" is a
+# --- Vastu-consultant decision, not settled here. Toilet/Staircase/StoreRoom
+# --- are heavy/impure structures traditionally excluded from the plot
+# --- centre; other heavy structures (pillars, heavy storage) may belong on
+# --- this list too. An open LivingRoom sitting over the centre is
+# --- deliberately NOT treated as a defect — open/light rooms over the
+# --- Brahmasthan are traditionally considered fine, even ideal.
+DEFAULT_BRAHMASTHAN_OBSTRUCTING_TYPES = {"Toilet", "Staircase", "StoreRoom"}
+
+# --- ASSUMPTION: 5% is a placeholder threshold chosen only to avoid firing
+# --- on rounding-level slivers of overlap — it is NOT a validated cutoff.
+# --- Whether partial overlap should scale severity continuously instead of
+# --- being a binary major violation is also a consultant sign-off item.
+DEFAULT_BRAHMASTHAN_OVERLAP_THRESHOLD = 0.05
+
+
+def _brahmasthan_remedy(schema):
+    """Pull a 'center' remedy from the schema if one exists, else a generic default.
+
+    The schema currently has no room_constraints.*.remedy.center entry for
+    any room (Toilet's forbidden list includes "center" but its remedy map
+    only covers NE/SW) — this falls back to a documented placeholder in that
+    case rather than emitting a violation with no remedy text at all.
+    """
+    toilet = schema.get("room_constraints", {}).get("Toilet", {})
+    remedy = toilet.get("remedy", {}).get("center")
+    if remedy:
+        return remedy
+    return (
+        "No remedy documented; classical Vastu requires the central zone be "
+        "kept open — structural relocation is the traditional fix, "
+        "mitigation only."
+    )
+
+
+def audit_brahmasthan(
+    geometry_results,
+    schema,
+    obstructing_types=None,
+    overlap_threshold=DEFAULT_BRAHMASTHAN_OVERLAP_THRESHOLD,
+):
+    """
+    Turn zone_geometry's per-room Brahmasthan fields into audit output.
+
+    geometry_results: iterable of dicts, one per room, in the shape produced
+        by zone_geometry.analyze_zones()["rooms"]. Each item must have:
+            - "room" (str) — room name. Used both as the type key checked
+              against obstructing_types AND as the label in violation text,
+              UNLESS the item also carries a "room_type" key, in which case
+              "room_type" is used for the obstructing_types check instead
+              (needed when instance names like "Toilet_master" don't match
+              schema room-type keys like "Toilet" 1:1 — see run_geometry.py).
+            - "contains_centre_point" (bool)
+            - "overlaps_brahmasthan_region" (bool)
+            - "region_overlap_fraction" (float)
+    schema: the loaded rule schema, used only to look up a "center" remedy
+        (see _brahmasthan_remedy).
+    obstructing_types: set of room-type names for which a central overlap is
+        a defect. Defaults to DEFAULT_BRAHMASTHAN_OBSTRUCTING_TYPES.
+    overlap_threshold: minimum region_overlap_fraction (for non-containing
+        rooms) that counts as a scored violation rather than a below-
+        threshold informational note. Defaults to
+        DEFAULT_BRAHMASTHAN_OVERLAP_THRESHOLD.
+
+    Returns (scored_violations, informational_notes) — two lists, kept
+    separate the same way audit_layout separates scored_violations from
+    unscored_warnings:
+        - scored_violations: rule_type="brahmasthan_obstruction",
+          severity="major".
+        - informational_notes: rule_type in
+          {"brahmasthan_info", "brahmasthan_minor_overlap"}, severity=None
+          — visible for human review, never scored.
+    """
+    if obstructing_types is None:
+        obstructing_types = DEFAULT_BRAHMASTHAN_OBSTRUCTING_TYPES
+
+    remedy = _brahmasthan_remedy(schema)
+
+    scored_violations = []
+    informational_notes = []
+
+    for room in geometry_results:
+        name = room.get("room")
+        room_type = room.get("room_type", name)
+        contains = bool(room.get("contains_centre_point"))
+        overlaps = bool(room.get("overlaps_brahmasthan_region"))
+        fraction = room.get("region_overlap_fraction") or 0.0
+
+        if room_type not in obstructing_types:
+            # Non-obstructing room type overlapping the region is visible,
+            # never scored — e.g. an open LivingRoom over the centre.
+            if overlaps:
+                informational_notes.append({
+                    "room": name,
+                    "rule_type": "brahmasthan_info",
+                    "message": (
+                        f"{name} overlaps the central Brahmasthan region "
+                        f"({fraction:.0%}); not scored as a defect for this "
+                        f"room type."
+                    ),
+                    "severity": None,
+                })
+            continue
+
+        if contains or fraction >= overlap_threshold:
+            if contains:
+                violation_text = f"{name} contains the exact centre"
+            else:
+                violation_text = (
+                    f"{name} overlaps central Brahmasthan region ({fraction:.0%})"
+                )
+            scored_violations.append({
+                "room": name,
+                "rule_type": "brahmasthan_obstruction",
+                "violation": violation_text,
+                "severity": "major",
+                "remedy": remedy,
+            })
+        elif overlaps:
+            # Obstructing type, but the overlap is a thin sliver below the
+            # scoring threshold — surfaced for human review, not silently
+            # dropped.
+            informational_notes.append({
+                "room": name,
+                "rule_type": "brahmasthan_minor_overlap",
+                "message": (
+                    f"{name} has a small Brahmasthan region overlap "
+                    f"({fraction:.0%}), below the {overlap_threshold:.0%} "
+                    f"scoring threshold."
+                ),
+                "severity": None,
+            })
+
+    return scored_violations, informational_notes
+
+
 def compute_score(scored_violations, base=BASE_SCORE):
     """
     scored_violations: list of violation dicts that have a non-None 'severity'.
@@ -199,11 +342,26 @@ def compute_score(scored_violations, base=BASE_SCORE):
     return max(score, 0)
 
 
-def audit_layout(input_data, schema):
+def audit_layout(
+    input_data,
+    schema,
+    geometry_results=None,
+    brahmasthan_obstructing_types=None,
+    brahmasthan_overlap_threshold=DEFAULT_BRAHMASTHAN_OVERLAP_THRESHOLD,
+):
     """
     input_data: dict with keys:
         - "plot": dict (see audit_plot_level)
         - "rooms": list of room dicts (see audit_room)
+    geometry_results: OPTIONAL. Per-room list from zone_geometry (see
+        audit_brahmasthan's docstring for the expected shape). When provided,
+        audit_brahmasthan() is run and its output is merged in (see return
+        shape below). When omitted (the default), behaviour is IDENTICAL to
+        before this parameter existed — no brahmasthan_* keys are added to
+        the result, existing callers are unaffected.
+    brahmasthan_obstructing_types / brahmasthan_overlap_threshold: passed
+        through to audit_brahmasthan() when geometry_results is provided;
+        see that function's docstring.
 
     Returns a result dict:
         {
@@ -213,7 +371,10 @@ def audit_layout(input_data, schema):
           "total_scored_violations": int,
           "major_count": int,
           "minor_count": int,
-          "unscored_warnings": [ ... ]  # e.g. unknown_room_type
+          "unscored_warnings": [ ... ],  # e.g. unknown_room_type
+          # only present when geometry_results is provided:
+          "brahmasthan_violations": [ ... ],  # scored, rule_type=brahmasthan_obstruction
+          "brahmasthan_notes": [ ... ],       # informational, never scored
         }
     """
     room_results = []
@@ -238,15 +399,33 @@ def audit_layout(input_data, schema):
     plot_violations = audit_plot_level(input_data.get("plot", {}), schema)
     scored_violations.extend(plot_violations)
 
-    return {
+    result = {
         "rooms": room_results,
         "plot_level": plot_violations,
-        "compliance_score": compute_score(scored_violations),
-        "total_scored_violations": len(scored_violations),
-        "major_count": sum(1 for v in scored_violations if v.get("severity") == "major"),
-        "minor_count": sum(1 for v in scored_violations if v.get("severity") == "minor"),
+        "compliance_score": None,  # filled in below, after brahmasthan merge
+        "total_scored_violations": None,
+        "major_count": None,
+        "minor_count": None,
         "unscored_warnings": unscored_warnings,
     }
+
+    if geometry_results is not None:
+        brahmasthan_violations, brahmasthan_notes = audit_brahmasthan(
+            geometry_results,
+            schema,
+            obstructing_types=brahmasthan_obstructing_types,
+            overlap_threshold=brahmasthan_overlap_threshold,
+        )
+        scored_violations.extend(brahmasthan_violations)
+        result["brahmasthan_violations"] = brahmasthan_violations
+        result["brahmasthan_notes"] = brahmasthan_notes
+
+    result["compliance_score"] = compute_score(scored_violations)
+    result["total_scored_violations"] = len(scored_violations)
+    result["major_count"] = sum(1 for v in scored_violations if v.get("severity") == "major")
+    result["minor_count"] = sum(1 for v in scored_violations if v.get("severity") == "minor")
+
+    return result
 
 
 # -------------------------------------------------------------------------

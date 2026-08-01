@@ -4,15 +4,20 @@ into the existing deterministic audit engine (vastu_audit.py), end to end.
 This script does no geometry or audit logic of its own — it only:
   1. loads a fixture of {boundary, north_offset_deg, rooms[with polygons]},
   2. calls zone_geometry.analyze_zones() and prints a readable report,
-  3. maps each room's computed zone onto the audit engine's expected
-     {"plot": ..., "rooms": [{"name", "zone", ...}]} input shape, and
-  4. calls vastu_audit.audit_layout() and prints the result.
+  3. maps each room's computed zone (and type, for the Brahmasthan check)
+     onto the audit engine's expected input shapes, and
+  4. calls vastu_audit.audit_layout(), now passing the geometry results
+     through so central-region obstructions become scored violations
+     alongside the existing categorical zone/adjacency checks, and prints
+     the result with the Brahmasthan lines clearly labelled.
 
 Room-name mapping note: the audit schema's room_constraints use generic
 room-type keys (e.g. "Toilet", "DiningRoom"), not the fixture's more specific
 instance names (e.g. "Toilet_master", "DiningRoom_DRG"). ROOM_TYPE_MAP below
 records that mapping explicitly; any fixture room name not listed is passed
-through unchanged.
+through unchanged. The same map is used both for the zone/adjacency rooms
+list and for the "room_type" the Brahmasthan check uses to decide whether a
+given instance's overlap is a defect (see vastu_audit.audit_brahmasthan).
 """
 
 import json
@@ -86,11 +91,40 @@ def build_audit_input(geometry_result):
     return {"plot": PLOT_LEVEL, "rooms": rooms}
 
 
+def build_brahmasthan_input(geometry_result):
+    """Attach a resolved "room_type" to each geometry room record.
+
+    audit_brahmasthan() checks obstructing_types against a room TYPE key
+    (e.g. "Toilet"), but this fixture's instance names (e.g.
+    "Toilet_master") don't match the schema's type keys 1:1 — same mapping
+    problem build_audit_input() already solves for the zone/adjacency
+    rooms list, reused here via ROOM_TYPE_MAP.
+    """
+    return [
+        {**r, "room_type": ROOM_TYPE_MAP.get(r["room"], r["room"])}
+        for r in geometry_result["rooms"]
+    ]
+
+
 def print_audit_report(audit_result):
     print("=" * 78)
     print("AUDIT  (vastu_audit.audit_layout)")
     print("=" * 78)
     print(json.dumps(audit_result, indent=2))
+    print()
+
+    print("-" * 78)
+    print("BRAHMASTHAN  (vastu_audit.audit_brahmasthan, via geometry_results)")
+    print("-" * 78)
+    violations = audit_result.get("brahmasthan_violations", [])
+    notes = audit_result.get("brahmasthan_notes", [])
+    if not violations and not notes:
+        print("(no Brahmasthan violations or notes)")
+    for v in violations:
+        print(f"  [SCORED  major] {v['room']}: {v['violation']}")
+    for n in notes:
+        print(f"  [INFO {n['rule_type']:<24}] {n['message']}")
+    print()
 
 
 def main():
@@ -104,7 +138,8 @@ def main():
 
     schema = load_schema(SCHEMA_PATH)
     audit_input = build_audit_input(geometry_result)
-    audit_result = audit_layout(audit_input, schema)
+    brahmasthan_input = build_brahmasthan_input(geometry_result)
+    audit_result = audit_layout(audit_input, schema, geometry_results=brahmasthan_input)
     print_audit_report(audit_result)
 
 
