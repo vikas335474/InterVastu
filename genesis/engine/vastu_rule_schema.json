@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "version": "0.2.0",
+    "status": "Draft — expanded from 2-room stub. Requires sign-off from a licensed Vastu consultant before production use.",
+    "epistemic_note": "Vastu Shastra is a traditional Indian belief system, not an empirically validated science. Rules below reflect consensus positions across multiple independent Indian Vastu-consultancy sources (cross-referenced, not single-sourced). Where sources genuinely disagreed, the conflict is recorded in 'notes' rather than silently resolved. Remedies are traditional/folk practices, not medically or scientifically proven interventions.",
+    "zone_calculation": "16 zones = 8 cardinal/ordinal directions each split into 2 sub-zones of 22.5° (360/16). Accurate zoning requires a true compass reading anchored to the plot's geometric center (Brahmasthan), not the building's visual center.",
+    "severity_levels": {
+      "major": "Widely flagged across sources as a serious dosha (defect) — significant risk of being cited in a professional audit as a compliance failure. Structural correction is the only complete fix; remedies mitigate, they don't cure.",
+      "minor": "Suboptimal but tolerated in most traditions, or disputed across sources. Remedies are generally considered effective."
+    }
+  },
+  "zones": ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
+  "room_constraints": {
+    "MainEntrance": {
+      "preferred": ["N", "NE", "E"],
+      "acceptable": ["W"],
+      "forbidden": ["S"],
+      "severity": { "S": "major" },
+      "remedy": {
+        "S": "South-facing entrances are traditionally corrected via an offset/zigzag entry path, a Vastu pyramid or Ganesha idol at the threshold, and bright, constant lighting — not a full fix, mitigation only."
+      },
+      "notes": "Strong cross-source consensus on N/NE/E as most auspicious. South entrance is the most consistently discouraged; door should open inward, clockwise.",
+      "confidence": "high"
+    },
+    "Kitchen": {
+      "preferred": ["SE"],
+      "acceptable": ["NW"],
+      "forbidden": ["NE", "N", "SW"],
+      "severity": { "NE": "major", "N": "minor", "SW": "minor" },
+      "remedy": {
+        "NE": "Traditional remedy: yellow or light-colored (e.g. Jaisalmer yellow marble) flooring under the stove, cook facing east, and keep the NE corner of the kitchen visually light and uncluttered.",
+        "SW": "Traditional remedy: place the stove/cooking platform on the SE wall of the kitchen even if the room itself is in SW, and use earth-tone (terracotta, ochre) tiling."
+      },
+      "notes": "SE (Agni Kona) is the near-universal first choice across sources. NW is the most commonly cited secondary option. Sources disagree on whether N is 'forbidden' or merely 'not ideal' — treated here as minor.",
+      "confidence": "high"
+    },
+    "MasterBedroom": {
+      "preferred": ["SW"],
+      "acceptable": ["S"],
+      "forbidden": ["NE", "SE"],
+      "sleeping_direction": "Head towards South or East; sleeping with head towards North is the one point sources most consistently advise against.",
+      "severity": { "NE": "major", "SE": "major" },
+      "remedy": {
+        "NE": "Traditional remedy: earth-tone/heavy textiles, grounding colors, avoid placing the bed directly in the NE corner even within an NE-zoned room.",
+        "SE": "SE carries fire energy per tradition; remedy is to avoid red/orange bedroom palettes and keep electrical equipment away from the bed."
+      },
+      "notes": "SW consensus is very strong (stability, Earth element, head of household). SE is discouraged for bedrooms generally, not just master.",
+      "confidence": "high"
+    },
+    "ChildrenBedroom": {
+      "preferred": ["W", "NW"],
+      "acceptable": ["N", "E"],
+      "forbidden": ["SE"],
+      "severity": { "SE": "minor" },
+      "remedy": { "SE": "Cooling colors (blue, green, white) to counter the fire-zone energy attributed to SE." },
+      "notes": "Lower source-consensus than master bedroom/kitchen; treat this room's rules as lower-confidence.",
+      "confidence": "medium"
+    },
+    "GuestBedroom": {
+      "preferred": ["NW"],
+      "acceptable": ["N"],
+      "forbidden": [],
+      "severity": {},
+      "remedy": {},
+      "notes": "NW is associated with transient/movement energy — considered ideal for guests who are meant to stay temporarily, not indefinitely.",
+      "confidence": "medium"
+    },
+    "LivingRoom": {
+      "preferred": ["N", "E", "NE"],
+      "acceptable": ["NW"],
+      "forbidden": [],
+      "severity": {},
+      "remedy": {},
+      "layout_rule": "Heavy furniture (sofas, cabinets) along S/W walls; keep N/E sides relatively open for light and circulation.",
+      "notes": "No 'forbidden' zone found with strong consensus for living rooms — this is a flexible room across sources.",
+      "confidence": "high"
+    },
+    "DiningRoom": {
+      "preferred": ["W"],
+      "acceptable": ["S", "E"],
+      "forbidden": [],
+      "severity": {},
+      "remedy": {},
+      "seating_rule": "Family should ideally face East while eating.",
+      "notes": "Weaker/lower-volume source agreement than kitchen or bedroom placements — flagged as medium confidence, needs consultant sign-off before being treated as a hard rule.",
+      "confidence": "medium"
+    },
+    "PoojaRoom": {
+      "preferred": ["NE"],
+      "acceptable": ["E", "N"],
+      "forbidden": ["SW", "under_staircase", "shares_wall_with_toilet"],
+      "severity": { "SW": "major", "under_staircase": "major", "shares_wall_with_toilet": "major" },
+      "remedy": {
+        "shares_wall_with_toilet": "Sources are unanimous this is one of the worst compound defects and consistently recommend relocation over any cosmetic remedy; cosmetic mitigations (mirror facing the pooja room, sealing the shared wall) are described as partial only."
+      },
+      "notes": "This is a compound-constraint room: the forbidden list includes structural adjacencies, not just compass zones. Represented here as special string flags rather than pure zone codes — the audit engine needs a separate adjacency-check pass for this.",
+      "confidence": "high"
+    },
+    "Toilet": {
+      "preferred": ["NW"],
+      "acceptable": ["W", "S"],
+      "forbidden": ["NE", "SW", "center"],
+      "severity": { "NE": "major", "SW": "major", "center": "major" },
+      "remedy": {
+        "NE": "Most-cited remedies: sea salt bowl replaced weekly, keep door closed at all times, indoor plant (money plant/spider plant), extreme cleanliness. Sources are explicit that no remedy fully removes this dosha — relocation during renovation is the only complete fix, and the product should not claim otherwise.",
+        "SW": "Vastu pyramid on the outer SW wall; light yellow/beige interior color; keep door closed."
+      },
+      "wall_sharing_rule": "Should not share a wall with the kitchen, bedroom (behind the bed), or pooja room.",
+      "seat_direction": "Person should face North or South while seated; never East or West.",
+      "notes": "Genuine cross-source conflict on the single 'best' zone: some sources say N/NW, others say W-of-NW or S/SW-adjacent (e.g. AppliedVastu). NE and SW are the only two zones where 'forbidden + major severity' is essentially unanimous. 'center' (Brahmasthan) is separately and universally forbidden for any toilet.",
+      "confidence": "high (for forbidden zones) / medium (for single best preferred zone)"
+    },
+    "Staircase": {
+      "preferred": ["S", "SW", "W"],
+      "acceptable": [],
+      "forbidden": ["NE", "center"],
+      "severity": { "NE": "major", "center": "major" },
+      "remedy": {
+        "NE": "Reduce visual/structural weight in the NE — sources generally treat this as requiring redesign rather than a cosmetic fix."
+      },
+      "notes": "Consensus: stairs should be heavy/grounded, so S/SW/W (Earth-associated zones) are preferred; NE (light, sacred zone) and the exact plot center are both avoided.",
+      "confidence": "high"
+    },
+    "StudyRoom": {
+      "preferred": ["E", "N"],
+      "acceptable": ["NE"],
+      "forbidden": ["SW"],
+      "severity": { "SW": "minor" },
+      "remedy": { "SW": "Desk oriented so the person faces East or North regardless of room zone." },
+      "notes": "Desk-facing direction is cited more consistently than the room's own zone placement.",
+      "confidence": "medium"
+    },
+    "StoreRoom": {
+      "preferred": ["SSW", "WSW"],
+      "acceptable": ["S", "W"],
+      "forbidden": ["NE"],
+      "severity": { "NE": "minor" },
+      "remedy": {},
+      "notes": "Heavy storage generally pushed to SW-adjacent sub-zones; kept light in NE.",
+      "confidence": "medium"
+    },
+    "OverheadWaterTank": {
+      "preferred": ["SW"],
+      "acceptable": ["W"],
+      "forbidden": ["NE"],
+      "severity": { "NE": "minor" },
+      "remedy": { "NE": "Paint tank blue; relocate to SW where structurally feasible." },
+      "notes": "Distinguish from underground sump/borewell, which follows the opposite rule (see WaterSumpBorewell).",
+      "confidence": "medium"
+    },
+    "WaterSumpBorewell": {
+      "preferred": ["NE"],
+      "acceptable": ["N", "E"],
+      "forbidden": ["SW"],
+      "severity": { "SW": "minor" },
+      "remedy": {},
+      "notes": "Underground water storage follows the opposite placement logic from overhead tanks — do not conflate the two in the audit engine.",
+      "confidence": "medium"
+    },
+    "SepticTank": {
+      "preferred": ["NW"],
+      "acceptable": ["W"],
+      "forbidden": ["NE", "S"],
+      "severity": { "NE": "minor", "S": "minor" },
+      "remedy": { "default": "Paint blue; relocate away from NE/S where feasible." },
+      "notes": "Lower source volume specifically on septic tanks vs. general toilet rules; confidence downgraded accordingly.",
+      "confidence": "low"
+    },
+    "Garage": {
+      "preferred": ["NW"],
+      "acceptable": ["N", "W"],
+      "forbidden": ["NE", "SW"],
+      "severity": { "NE": "minor", "SW": "minor" },
+      "remedy": {},
+      "notes": "Garage/vehicle-parking rules had the least source depth of all rooms searched — treat as provisional pending consultant review.",
+      "confidence": "low"
+    }
+  },
+  "plot_level_rules": {
+    "shape": {
+      "preferred": ["square", "rectangle"],
+      "forbidden": ["triangular", "polygonal_irregular", "L_shaped_without_correction"],
+      "notes": "Consistent across sources: square/rectangular plots are auspicious; irregular shapes require either structural correction or are advised against outright."
+    },
+    "floor_slope": {
+      "rule": "Ground level should be higher in SW, sloping down towards NE.",
+      "confidence": "high"
+    },
+    "brahmasthan": {
+      "rule": "The geometric center of the plot should be kept open, light, and free of heavy structure (no toilet, staircase, or heavy pillar in the exact center).",
+      "confidence": "high"
+    }
+  },
+  "known_gaps": [
+    "No numeric compass-degree ingestion logic defined yet — zones here are categorical (16 labels), but the audit engine needs the actual 0-360° reading plus plot-center coordinates to assign a room to a zone correctly.",
+    "No handling for multi-story buildings (zone rules can shift by floor in some traditions — not covered here).",
+    "Ayadi/Vastu Purusha Mandala numerological calculations (plot proportions, entrance-point auspiciousness by measurement) are a distinct, more advanced layer not included in this schema — flag to product/legal whether the product's marketing claims 'full Vastu compliance' (which would require this) or 'directional Vastu audit' (which this schema supports).",
+    "Legal/compliance: remedy language throughout should be reviewed by legal before shipping, since 'this will fix your dosha' claims (as opposed to 'this is a traditional remedy for X') carry consumer-protection risk in a paid product."
+  ]
+}
