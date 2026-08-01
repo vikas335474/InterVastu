@@ -18,8 +18,11 @@ scene/                        # Node/TS — deterministic 3D + depth maps (repo 
   src/coords.ts, furniture_catalog.ts, png_encoder.ts, types.ts
   tests/
 render_adapter/               # Node — vendor-agnostic styling interface (repo root)
-  src/adapter.ts                # interface + mock provider
-  src/providers/                # real providers added post-spike
+  src/types.ts                  # StylingProvider interface (no vendor wired in yet)
+  src/providers/mock_provider.ts # MockStylingProvider — no network calls, no vendor deps
+  src/drift_check.ts            # checkGeometryDrift — STUB pending vendor spike
+  src/png.ts, bitmap_font.ts, cli.ts
+  tests/
 docs/
   build_plan.md                # this file
 ```
@@ -35,7 +38,7 @@ docs/
 | `genesis/engine/solver.py` | Done (Phase 1c) — constraint-based placement for bed (MasterBedroom/GuestBedroom/ChildrenBedroom), stove (Kitchen), and heavy-furniture wall recommendation (LivingRoom) only; always returns a least-bad placement with a `compromise`/`compromise_note` flag rather than silently failing or violating a rule, 13 tests. Does not attempt general room layout or any other room type |
 | `genesis/engine/fixtures/` | Not started as a shared directory — the Unit 12 L-shape regression fixture currently lives inline in `genesis/engine/tests/test_zone_geometry.py`; extract here if a future task needs to share it across modules |
 | `scene/` | Done (Phase 2, initial pass) — deterministic Three.js scene assembly (box-extruded walls with opening cuts, floor/ceiling planes, placeholder furniture boxes sized per `furniture_catalog.ts`) driven directly by `solver.py`'s output shape; headless Playwright rendering (real WebGL, not a server-side GL library, so the same renderer is reusable for a later in-browser viewer) produces a color PNG and a true single-channel grayscale linear-depth PNG per room via a custom depth shader (not `MeshDepthMaterial`'s default nonlinear packing, which compresses almost the whole range into a handful of gray levels at typical near/far ratios); 3 tests on a 12x16 single-room + bed fixture. Real licensed furniture meshes (currently placeholder boxes) and `.glb` export (currently a reusable `THREE.ObjectLoader`-format `.json`) are explicit follow-ups, not blocked by anything here |
-| `render_adapter/` | Not started |
+| `render_adapter/` | Done (initial pass) — vendor-agnostic `StylingProvider` interface (`styleImage`) plus `MockStylingProvider` (flat color wash + bitmap-font label stamped onto the input depth map; zero runtime dependencies, no network calls) so the rest of the pipeline is testable before the Phase-0 vendor bake-off (Replicate, PromeAI, etc.) picks a real provider. `checkGeometryDrift` is a deliberately fixed-result STUB — see its module docstring for exactly what the real MiDaS-family-model-based implementation needs to do; not implemented here since it depends on which vendor gets picked. 4 tests, plus manually verified end to end against a real depth map from `scene/`'s `export_views.ts` output |
 
 ## Notes
 

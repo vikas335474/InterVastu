@@ -1,0 +1,18 @@
+{
+  "name": "@intervastu/render-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendor-agnostic AI render-styling interface. No real vendor is wired in yet (Phase-0 spike pending) — only the interface plus a mock/test provider.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

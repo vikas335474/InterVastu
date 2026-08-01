@@ -70,3 +70,34 @@ npm test
 Furniture placeholders are simple boxes, not licensed 3D assets — sourcing
 real furniture meshes is a separate follow-up task and nothing here is
 blocked on it.
+
+## `render_adapter/` — vendor-agnostic AI render-styling interface
+
+Defines `StylingProvider` (`src/types.ts`) — a single `styleImage()` method
+that any AI render-styling vendor will implement. **No real vendor is wired
+in yet**: a Phase-0 bake-off (Replicate, PromeAI, etc.) is still pending, so
+this package has zero runtime dependencies and makes zero network calls.
+
+`MockStylingProvider` (`src/providers/mock_provider.ts`) stands in for a
+real vendor during development: it overlays a flat color wash plus a label
+(stamped with a tiny embedded bitmap font, `src/bitmap_font.ts`) onto the
+input depth map and saves that as the "styled" output. It's deliberately
+ugly — its only job is to exercise the rest of the pipeline (batching, cost
+tracking, drift-checking) without an API key or inference spend.
+
+`checkGeometryDrift()` (`src/drift_check.ts`) is a clearly-labeled **stub**
+that always returns a fixed placeholder result. Its docstring spells out
+the real implementation: re-run a monocular depth-estimation model (e.g. an
+open MiDaS-family model) on the styled output and compare it against the
+original depth map to catch a vendor moving or inventing geometry. That's
+deferred until the vendor spike picks a provider, since which failure modes
+are worth checking depends on the vendor.
+
+```
+cd render_adapter && npm install
+npx tsx src/cli.ts [depthMapPath] [stylePrompt] [outputDir]   # depthMapPath defaults to a synthetic fixture
+npm test
+```
+
+Tested end to end against a real depth map from `scene/`'s
+`export_views.ts` output, not just synthetic fixtures.
