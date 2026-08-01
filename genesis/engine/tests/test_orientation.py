@@ -49,6 +49,7 @@ L_FOOTPRINT = [(0, 0), (41, 0), (41, 25), (25, 25), (25, 40), (0, 40)]
 def test_rectangle_long_edge_east_west_gives_bearing_90():
     result = ori.estimate_facade_bearing_from_footprint(RECT_EW)
     assert result["facade_bearing_deg"] == pytest.approx(90.0)
+    assert result["north_offset_deg"] == pytest.approx(90.0)
     assert result["source"] == "footprint_estimate"
     assert "ESTIMATE" in result["reliability_note"]
     assert result["footprint_polygon"] == [
@@ -148,6 +149,7 @@ def test_estimate_facade_bearing_not_found_result_shape():
     )
     assert result == {
         "facade_bearing_deg": None,
+        "north_offset_deg": None,
         "source": "not_found",
         "reliability_note": ori.NOT_FOUND_RELIABILITY_NOTE,
         "footprint_polygon": None,
@@ -162,6 +164,7 @@ def test_estimate_facade_bearing_end_to_end_via_ms_source():
     )
     assert result["source"] == "footprint_estimate"
     assert result["facade_bearing_deg"] == pytest.approx(90.0)
+    assert result["north_offset_deg"] == pytest.approx(90.0)
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +174,7 @@ def test_estimate_facade_bearing_end_to_end_via_ms_source():
 def test_manual_bearing_has_manual_source_and_no_lookup_dependency():
     result = ori.manual_facade_bearing(123.456)
     assert result["facade_bearing_deg"] == pytest.approx(123.456)
+    assert result["north_offset_deg"] == pytest.approx(123.456)
     assert result["source"] == "manual"
     assert result["footprint_polygon"] is None
     assert result["reliability_note"] == ori.MANUAL_RELIABILITY_NOTE
@@ -179,9 +183,11 @@ def test_manual_bearing_has_manual_source_and_no_lookup_dependency():
 def test_manual_bearing_normalises_out_of_range_input():
     result = ori.manual_facade_bearing(-30.0)
     assert result["facade_bearing_deg"] == pytest.approx(330.0)
+    assert result["north_offset_deg"] == pytest.approx(330.0)
 
     result2 = ori.manual_facade_bearing(390.0)
     assert result2["facade_bearing_deg"] == pytest.approx(30.0)
+    assert result2["north_offset_deg"] == pytest.approx(30.0)
 
 
 def test_manual_bearing_passes_through_optional_footprint():
@@ -199,5 +205,17 @@ def test_automated_and_manual_outputs_share_schema():
     automated = ori.estimate_facade_bearing_from_footprint(RECT_EW)
     manual = ori.manual_facade_bearing(90.0, footprint_polygon=RECT_EW)
     assert set(automated) == set(manual) == {
-        "facade_bearing_deg", "source", "reliability_note", "footprint_polygon",
+        "facade_bearing_deg", "north_offset_deg", "source", "reliability_note",
+        "footprint_polygon",
     }
+
+
+def test_north_offset_deg_aliases_facade_bearing_deg_for_automated_and_manual():
+    """Documents the current assumption (see module docstring): plan-up is
+    assumed to face the detected/provided facade, so north_offset_deg is
+    currently a plain alias of facade_bearing_deg, not an independent value."""
+    automated = ori.estimate_facade_bearing_from_footprint(RECT_EW)
+    assert automated["north_offset_deg"] == automated["facade_bearing_deg"]
+
+    manual = ori.manual_facade_bearing(77.0)
+    assert manual["north_offset_deg"] == manual["facade_bearing_deg"]
