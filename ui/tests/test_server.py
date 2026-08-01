@@ -134,3 +134,74 @@ def test_schema_info_endpoint_unaffected_by_persistence_changes(client):
     resp = client.get("/schema-info")
     assert resp.status_code == 200
     assert "room_types" in resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Placement suggestions (suggestions.py wiring)
+# ---------------------------------------------------------------------------
+
+LAYOUT_WITH_POLYGON = {
+    "label": "Unit 12",
+    "owner": "vikas",
+    "plot": {"shape": "rectangle"},
+    "rooms": [{
+        "name": "MasterBedroom",
+        "zone": "SW",
+        "polygon": [[0, 0], [12, 0], [12, 14], [0, 14]],
+    }],
+    "facade_bearing_deg": 0.0,
+}
+
+
+def test_audit_endpoint_includes_suggestion_for_room_with_polygon(client):
+    resp = client.post("/audit", json=LAYOUT_WITH_POLYGON)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["suggestions"]) == 1
+    assert body["suggestions"][0]["room"] == "MasterBedroom"
+    assert body["suggestions"][0]["placements"][0]["object"] == "bed"
+
+
+def test_audit_endpoint_has_empty_suggestions_when_no_polygons(client):
+    resp = client.post("/audit", json={"plot": {}, "rooms": [{"name": "Kitchen", "zone": "SE"}]})
+    assert resp.status_code == 200
+    assert resp.json()["suggestions"] == []
+
+
+def test_create_flat_saves_and_returns_suggestions(client):
+    resp = client.post("/flats", json=LAYOUT_WITH_POLYGON)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["result"]["suggestions"]) == 1
+    assert body["input"]["facade_bearing_deg"] == 0.0
+
+
+def test_saved_flat_round_trips_facade_bearing_and_polygon(client):
+    created = client.post("/flats", json=LAYOUT_WITH_POLYGON).json()
+    flat_id = created["flat_id"]
+
+    flat = client.get(f"/flats/{flat_id}").json()
+    saved_input = flat["versions"][0]["input"]
+    assert saved_input["facade_bearing_deg"] == 0.0
+    assert saved_input["rooms"][0]["polygon"] == [[0, 0], [12, 0], [12, 14], [0, 14]]
+
+
+def test_suggestion_error_for_room_too_small_is_not_a_500(client):
+    layout = {
+        "plot": {},
+        "rooms": [{"name": "MasterBedroom", "zone": "SW", "polygon": [[0, 0], [2, 0], [2, 2], [0, 2]]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    assert "suggestion_error" in resp.json()["suggestions"][0]
+
+
+def test_furniture_dimensions_override_is_honored(client):
+    layout = {
+        "plot": {},
+        "rooms": [{"name": "MasterBedroom", "zone": "SW", "polygon": [[0, 0], [4, 0], [4, 5], [0, 5]]}],
+        "furniture_dimensions": {"MasterBedroom": [3.0, 4.0]},
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    assert "placements" in resp.json()["suggestions"][0]

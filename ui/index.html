@@ -28,6 +28,14 @@
   #save-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
   #save-row input[type=text] { padding: 0.35rem; }
   #save-status { font-size: 0.85rem; color: #2e7d32; }
+  .suggestion-extras { display: none; flex-basis: 100%; margin: 0.35rem 0 0.35rem 1.5rem; font-size: 0.85rem; }
+  .suggestion-extras.enabled { display: block; }
+  .suggestion-extras textarea { width: 100%; max-width: 480px; height: 3rem; font-family: monospace; font-size: 0.8rem; }
+  .suggestion-extras .dims input { width: 4rem; padding: 0.2rem; }
+  .suggestion-extras .hint { color: #999; }
+  .suggestion { border-left: 4px solid #2e7d32; background: #eef7ee; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
+  .suggestion.compromise { border-color: #d68910; background: #fef5e7; }
+  .suggestion-error { border-left: 4px solid #999; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; color: #555; }
 </style>
 </head>
 <body>
@@ -54,10 +62,20 @@
   <span id="obstruction-type-wrap" style="display:none; margin-left:1rem;">
     <label>Obstruction type: <input type="text" id="obstruction-type" placeholder="e.g. toilet, staircase, pillar"></label>
   </span>
+  <br><br>
+  <label>Facade bearing (deg, true N=0, for placement suggestions below):
+    <input type="number" id="facade-bearing" value="0" step="0.1" style="width:5rem;">
+  </label>
+  <span class="muted">Only affects rooms with a polygon entered (see below).</span>
 </fieldset>
 
 <fieldset>
   <legend>Rooms</legend>
+  <p class="muted">
+    For MasterBedroom / GuestBedroom / ChildrenBedroom / Kitchen / LivingRoom, you can
+    optionally enter the room's polygon to get a concrete furniture-placement suggestion
+    (bed/stove position, or the recommended heavy-furniture wall) alongside the zone audit.
+  </p>
   <div id="rooms-container"></div>
   <button id="add-room-btn" type="button">+ Add room</button>
 </fieldset>
@@ -83,6 +101,17 @@
 let schemaInfo = null;
 let roomIdCounter = 0;
 let loadedFlatId = null;
+
+// Mirrors suggestions.py's scope + DEFAULT_FURNITURE_DIMENSIONS -- kept in
+// sync manually since this is a thin display hint, not a source of truth
+// (the server always computes the actual suggestion).
+const SUGGESTION_ROOM_TYPES = new Set(['MasterBedroom', 'GuestBedroom', 'ChildrenBedroom', 'Kitchen', 'LivingRoom']);
+const DEFAULT_DIMENSIONS = {
+  MasterBedroom: [6.0, 6.5],
+  GuestBedroom: [6.0, 6.5],
+  ChildrenBedroom: [4.0, 6.5],
+  Kitchen: [2.0, 2.0],
+};
 
 async function loadSchemaInfo() {
   const resp = await fetch('/schema-info');
@@ -115,6 +144,15 @@ function addRoomRow() {
     <select class="room-zone">${zoneOptions}</select>
     <span class="flags"></span>
     <button type="button" class="remove-btn">Remove</button>
+    <div class="suggestion-extras">
+      <label>Polygon (JSON [[x,y],...] ft):</label><br>
+      <textarea class="room-polygon" placeholder="e.g. [[0,0],[12,0],[12,14],[0,14]]"></textarea>
+      <div class="dims">
+        <label>Width ft: <input type="number" class="dim-width" step="0.1"></label>
+        <label>Depth ft: <input type="number" class="dim-depth" step="0.1"></label>
+        <span class="hint">(bed/stove footprint; leave blank for the default)</span>
+      </div>
+    </div>
   `;
 
   container.appendChild(row);
@@ -135,6 +173,20 @@ function updateFlags(row) {
   flagsSpan.innerHTML = flags.map(f => `
     <label><input type="checkbox" class="adjacency-flag" value="${f}"> ${f}</label>
   `).join('');
+
+  const extras = row.querySelector('.suggestion-extras');
+  const supportsSuggestion = SUGGESTION_ROOM_TYPES.has(roomType);
+  extras.classList.toggle('enabled', supportsSuggestion);
+  const dimsWrap = row.querySelector('.dims');
+  const needsDims = roomType in DEFAULT_DIMENSIONS;
+  dimsWrap.style.display = needsDims ? '' : 'none';
+  if (needsDims) {
+    const [w, d] = DEFAULT_DIMENSIONS[roomType];
+    const widthInput = row.querySelector('.dim-width');
+    const depthInput = row.querySelector('.dim-depth');
+    if (!widthInput.value) widthInput.placeholder = w;
+    if (!depthInput.value) depthInput.placeholder = d;
+  }
 }
 
 function assembleLayout() {
@@ -148,16 +200,44 @@ function assembleLayout() {
   }
 
   const rooms = [];
+  const furniture_dimensions = {};
+  const polygonErrors = [];
   document.querySelectorAll('.room-row').forEach(row => {
     const name = row.querySelector('.room-type').value;
     const zone = row.querySelector('.room-zone').value;
     const adjacency_flags = [...row.querySelectorAll('.adjacency-flag:checked')].map(cb => cb.value);
     const room = { name, zone };
     if (adjacency_flags.length) room.adjacency_flags = adjacency_flags;
+
+    const polygonText = row.querySelector('.room-polygon').value.trim();
+    if (polygonText) {
+      try {
+        room.polygon = JSON.parse(polygonText);
+      } catch (e) {
+        polygonErrors.push(`${name}: invalid polygon JSON (${e.message})`);
+      }
+    }
+    const width = parseFloat(row.querySelector('.dim-width').value);
+    const depth = parseFloat(row.querySelector('.dim-depth').value);
+    if (!isNaN(width) && !isNaN(depth)) {
+      furniture_dimensions[name] = [width, depth];
+    }
+
     rooms.push(room);
   });
 
-  return { plot, rooms };
+  const facade_bearing_deg = parseFloat(document.getElementById('facade-bearing').value) || 0.0;
+
+  return { plot, rooms, facade_bearing_deg, furniture_dimensions, polygonErrors };
+}
+
+function layoutPayload() {
+  const { polygonErrors, ...layout } = assembleLayout();
+  if (polygonErrors.length) {
+    setSaveStatus(`Fix room polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
+    return null;
+  }
+  return layout;
 }
 
 function severityClass(severity) {
@@ -206,11 +286,31 @@ function renderResults(result) {
     });
   }
 
+  if (result.suggestions && result.suggestions.length) {
+    html += `<h3>Placement suggestions</h3>`;
+    html += `<p class="muted">Geometric suggestions from the furniture-placement solver, for rooms where a polygon was entered. Position/rotation are in the room's own local feet coordinates.</p>`;
+    result.suggestions.forEach(s => {
+      if (s.suggestion_error) {
+        html += `<div class="suggestion-error"><strong>${s.room}</strong>: ${s.suggestion_error}</div>`;
+        return;
+      }
+      (s.placements || []).forEach(p => {
+        const cls = p.compromise ? 'suggestion compromise' : 'suggestion';
+        html += `<div class="${cls}">
+          <strong>${p.room}</strong> — ${p.object} at [${p.position.join(', ')}], facing ${p.rotation_deg}°
+          ${p.compromise ? ' <em>(compromise)</em>' : ''}<br>
+          ${p.compromise_note ? `<span>${p.compromise_note}</span>` : '<span class="muted">Satisfies the schema\'s preferred direction.</span>'}
+        </div>`;
+      });
+    });
+  }
+
   el.innerHTML = html;
 }
 
 async function runAudit() {
-  const layout = assembleLayout();
+  const layout = layoutPayload();
+  if (!layout) return;
   const resp = await fetch('/audit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -286,6 +386,9 @@ function populateFormFromInput(input) {
   document.getElementById('brahmasthan-obstructed').checked = !!plot.brahmasthan_obstructed;
   document.getElementById('obstruction-type-wrap').style.display = plot.brahmasthan_obstructed ? 'inline' : 'none';
   document.getElementById('obstruction-type').value = plot.brahmasthan_obstruction_type || '';
+  document.getElementById('facade-bearing').value = input.facade_bearing_deg || 0;
+
+  const furnitureDims = input.furniture_dimensions || {};
 
   document.getElementById('rooms-container').innerHTML = '';
   (input.rooms || []).forEach(room => {
@@ -298,6 +401,14 @@ function populateFormFromInput(input) {
       const cb = row.querySelector(`.adjacency-flag[value="${flag}"]`);
       if (cb) cb.checked = true;
     });
+    if (room.polygon) {
+      row.querySelector('.room-polygon').value = JSON.stringify(room.polygon);
+    }
+    const dims = furnitureDims[room.name];
+    if (dims) {
+      row.querySelector('.dim-width').value = dims[0];
+      row.querySelector('.dim-depth').value = dims[1];
+    }
   });
   if (!(input.rooms || []).length) addRoomRow();
 }
