@@ -249,6 +249,233 @@ def audit_layout(input_data, schema):
     }
 
 
+# -------------------------------------------------------------------------
+# OBJECT-PLACEMENT RULES — MY INTERPRETATION, NOT SCHEMA-APPROVED
+# -------------------------------------------------------------------------
+# The schema's own room_constraints only carry compass-zone rules
+# (preferred/acceptable/forbidden zones + adjacency flags). Several rooms
+# ALSO have free-text object-level guidance embedded in unrelated fields:
+# MasterBedroom.sleeping_direction, Toilet.seat_direction,
+# LivingRoom.layout_rule, DiningRoom.seating_rule, and two remedy-text
+# mentions (Kitchen "cook facing east", StudyRoom "desk oriented ...").
+#
+# The table below is THIS MODULE'S structured reading of that free text
+# into preferred/forbidden direction codes — it is NOT itself part of
+# vastu_rule_schema.json, was not written by a Vastu consultant, and must
+# go on the same consultant sign-off list as the rest of the schema (see
+# the DATA SOURCE NOTE at the top of this file) before being treated as
+# authoritative. If a future schema version encodes these rules directly
+# with structured fields, prefer that over this table.
+#
+# Shape: OBJECT_PLACEMENT_RULES[room_name][object_field] = {
+#     "preferred": [direction, ...],
+#     "forbidden": [direction, ...],   # may be empty — see rule below
+#     "severity":  "major" | "minor",  # ASSUMPTION, see SEVERITY_POINTS note
+#     "remedy":    str,
+#     "source_text": str,  # the schema text this entry was derived from
+# }
+#
+# Violation rule per field:
+#   - if "forbidden" is non-empty: violation iff the given direction is IN
+#     "forbidden" (the schema text names specific bad directions).
+#   - if "forbidden" is empty: violation iff the given direction is NOT IN
+#     "preferred" (the schema text only names a single good direction, with
+#     no named opposite — treated as "anything else is non-compliant").
+OBJECT_PLACEMENT_RULES = {
+    "MasterBedroom": {
+        "bed_head_direction": {
+            "preferred": ["S", "E"],
+            "forbidden": ["N"],
+            "severity": "major",
+            "remedy": (
+                "Reorient the bed so the sleeper's head points South or "
+                "East. Sources most consistently single out a "
+                "North-pointing head as the one sleeping direction to "
+                "avoid above all others."
+            ),
+            "source_text": (
+                "MasterBedroom.sleeping_direction: 'Head towards South "
+                "or East; sleeping with head towards North is the one "
+                "point sources most consistently advise against.'"
+            ),
+        },
+    },
+    "Toilet": {
+        "seat_direction": {
+            "preferred": ["N", "S"],
+            "forbidden": ["E", "W"],
+            "severity": "minor",
+            "remedy": (
+                "Reposition the seat so the person faces North or South "
+                "while seated, never East or West."
+            ),
+            "source_text": (
+                "Toilet.seat_direction: 'Person should face North or "
+                "South while seated; never East or West.'"
+            ),
+        },
+    },
+    "Kitchen": {
+        "stove_facing_direction": {
+            "preferred": ["E"],
+            "forbidden": [],
+            "severity": "minor",
+            "remedy": "Position the cook facing East while cooking.",
+            "source_text": (
+                "Kitchen NE remedy note: 'cook facing east' (see "
+                "room_constraints.Kitchen.remedy.NE)."
+            ),
+        },
+    },
+    "StudyRoom": {
+        "desk_facing_direction": {
+            "preferred": ["E", "N"],
+            "forbidden": [],
+            "severity": "minor",
+            "remedy": (
+                "Orient the desk so the person faces East or North, "
+                "regardless of the room's own zone."
+            ),
+            "source_text": (
+                "StudyRoom SW remedy note: 'Desk oriented so the person "
+                "faces East or North regardless of room zone.' (see "
+                "room_constraints.StudyRoom.remedy.SW)."
+            ),
+        },
+    },
+    "LivingRoom": {
+        "heavy_furniture_wall": {
+            "preferred": ["S", "W"],
+            "forbidden": ["N", "E"],
+            "severity": "minor",
+            "remedy": (
+                "Relocate heavy furniture (sofas, cabinets) to the S/W "
+                "walls; keep the N/E sides open for light and "
+                "circulation."
+            ),
+            "source_text": (
+                "LivingRoom.layout_rule: 'Heavy furniture (sofas, "
+                "cabinets) along S/W walls; keep N/E sides relatively "
+                "open for light and circulation.'"
+            ),
+        },
+    },
+    "DiningRoom": {
+        "seating_facing_direction": {
+            "preferred": ["E"],
+            "forbidden": [],
+            "severity": "minor",
+            "remedy": "Arrange seating so the family faces East while eating.",
+            "source_text": (
+                "DiningRoom.seating_rule: 'Family should ideally face "
+                "East while eating.'"
+            ),
+        },
+    },
+}
+
+
+def audit_object_placement(room, schema):
+    """
+    Check a room's OPTIONAL object-placement data against
+    OBJECT_PLACEMENT_RULES (see the ASSUMPTION note above that table — this
+    is this module's own interpretation of the schema's free text, not a
+    schema-defined check).
+
+    room: dict with keys:
+        - name (str, required)
+        - objects (dict, optional) — e.g. {"bed_head_direction": "N"}.
+          Unrecognised rooms or fields are silently ignored (not flagged as
+          unknown_room_type like audit_room does), since 'objects' is an
+          optional, additive input and most rooms simply won't have an
+          object-placement rule at all.
+
+    Note: `schema` is accepted (and reserved) for symmetry with audit_room
+    and to allow a future schema version to supply this table directly, but
+    the current implementation reads only OBJECT_PLACEMENT_RULES above.
+
+    Returns a list of violation dicts shaped like audit_room's zone/adjacency
+    violations, with rule_type = "object_placement", so they merge directly
+    into audit_layout-style scoring and reporting.
+    """
+    name = room.get("name")
+    objects = room.get("objects") or {}
+    room_rules = OBJECT_PLACEMENT_RULES.get(name, {})
+
+    violations = []
+    for field, direction in objects.items():
+        rule = room_rules.get(field)
+        if rule is None:
+            continue
+
+        forbidden = rule.get("forbidden", [])
+        preferred = rule.get("preferred", [])
+        is_violation = (
+            direction in forbidden if forbidden else direction not in preferred
+        )
+        if not is_violation:
+            continue
+
+        violations.append({
+            "room": name,
+            "rule_type": "object_placement",
+            "violation": f"{field}={direction}",
+            "severity": rule.get("severity", "minor"),
+            "remedy": rule.get("remedy", "No remedy documented for this object-placement rule."),
+        })
+
+    return violations
+
+
+def audit_layout_with_objects(input_data, schema):
+    """
+    Superset of audit_layout(): same plot-level + zone/adjacency checks,
+    PLUS each room's optional 'objects' data checked via
+    audit_object_placement(). Added alongside audit_layout/audit_room
+    without modifying either — existing callers of audit_layout are
+    unaffected.
+
+    Object-placement severities ("major"/"minor") are scored on the SAME
+    SEVERITY_POINTS scale as zone/adjacency violations (see the scoring
+    ASSUMPTION note at the top of this file) — this is a deliberate reuse,
+    not an oversight; a separate points scale was not warranted since the
+    schema doesn't numerically weight either category.
+
+    input_data / return shape: identical to audit_layout.
+    """
+    room_results = []
+    scored_violations = []
+    unscored_warnings = []
+
+    for room in input_data.get("rooms", []):
+        room_violations = audit_room(room, schema) + audit_object_placement(room, schema)
+        if not room_violations:
+            continue
+        room_results.append({
+            "room": room.get("name"),
+            "zone": room.get("zone"),
+            "violations": room_violations,
+        })
+        for v in room_violations:
+            if v.get("severity") is None:
+                unscored_warnings.append(v)
+            else:
+                scored_violations.append(v)
+
+    plot_violations = audit_plot_level(input_data.get("plot", {}), schema)
+    scored_violations.extend(plot_violations)
+
+    return {
+        "rooms": room_results,
+        "plot_level": plot_violations,
+        "compliance_score": compute_score(scored_violations),
+        "total_scored_violations": len(scored_violations),
+        "major_count": sum(1 for v in scored_violations if v.get("severity") == "major"),
+        "minor_count": sum(1 for v in scored_violations if v.get("severity") == "minor"),
+        "unscored_warnings": unscored_warnings,
+    }
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python vastu_audit.py <input_layout.json> [schema_path]")
