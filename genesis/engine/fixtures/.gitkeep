@@ -1,0 +1,4 @@
+Placeholder. Test-flat fixtures (incl. the Unit 12 L-shape permanent
+regression fixture, currently inline in tests/test_zone_geometry.py) move
+here if/when they need to be shared across audit.py, solver.py, and the
+zone_geometry tests.
