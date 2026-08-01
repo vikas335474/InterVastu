@@ -10,15 +10,18 @@ genesis/
     solver.py                  # Phase 1c furniture placement
     fixtures/                  # test flats, incl. Unit 12 L-shape as permanent regression fixture
     tests/
-  scene/                      # Node — deterministic 3D + depth maps
-    src/build_scene.ts         # room polygons + solver output -> Three.js scene
-    src/export_depth.ts        # headless render -> depth map + camera views
-    tests/
-  render_adapter/             # Node — vendor-agnostic styling interface
-    src/adapter.ts             # interface + mock provider
-    src/providers/             # real providers added post-spike
-  docs/
-    build_plan.md              # this file
+scene/                        # Node/TS — deterministic 3D + depth maps (repo root, not under genesis/)
+  src/build_scene.ts           # room polygons + solver output -> Three.js scene (browser-safe, no Node built-ins)
+  src/scene_cli.ts              # CLI: build_scene + save reusable scene.json (THREE.ObjectLoader format)
+  src/export_views.ts           # CLI: whole pipeline -> per-room color PNG + grayscale depth-map PNG
+  src/browser/render_entry.ts   # bundled (esbuild) into the headless Playwright page; does the actual WebGL render
+  src/coords.ts, furniture_catalog.ts, png_encoder.ts, types.ts
+  tests/
+render_adapter/               # Node — vendor-agnostic styling interface (repo root)
+  src/adapter.ts                # interface + mock provider
+  src/providers/                # real providers added post-spike
+docs/
+  build_plan.md                # this file
 ```
 
 ## Status
@@ -31,7 +34,7 @@ genesis/
 | `genesis/engine/vastu_rule_schema.json` | v0.2.0 draft, in place — still explicitly "pending sign-off from a licensed Vastu consultant" per its own `_meta.status` |
 | `genesis/engine/solver.py` | Done (Phase 1c) — constraint-based placement for bed (MasterBedroom/GuestBedroom/ChildrenBedroom), stove (Kitchen), and heavy-furniture wall recommendation (LivingRoom) only; always returns a least-bad placement with a `compromise`/`compromise_note` flag rather than silently failing or violating a rule, 13 tests. Does not attempt general room layout or any other room type |
 | `genesis/engine/fixtures/` | Not started as a shared directory — the Unit 12 L-shape regression fixture currently lives inline in `genesis/engine/tests/test_zone_geometry.py`; extract here if a future task needs to share it across modules |
-| `scene/` | Not started (Phase 2) — `solver.py`'s output shape (list of `{room, object, position, rotation_deg, satisfies_rule, compromise, compromise_note}`) is designed to feed directly into this |
+| `scene/` | Done (Phase 2, initial pass) — deterministic Three.js scene assembly (box-extruded walls with opening cuts, floor/ceiling planes, placeholder furniture boxes sized per `furniture_catalog.ts`) driven directly by `solver.py`'s output shape; headless Playwright rendering (real WebGL, not a server-side GL library, so the same renderer is reusable for a later in-browser viewer) produces a color PNG and a true single-channel grayscale linear-depth PNG per room via a custom depth shader (not `MeshDepthMaterial`'s default nonlinear packing, which compresses almost the whole range into a handful of gray levels at typical near/far ratios); 3 tests on a 12x16 single-room + bed fixture. Real licensed furniture meshes (currently placeholder boxes) and `.glb` export (currently a reusable `THREE.ObjectLoader`-format `.json`) are explicit follow-ups, not blocked by anything here |
 | `render_adapter/` | Not started |
 
 ## Notes

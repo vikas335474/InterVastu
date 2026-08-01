@@ -1,0 +1,23 @@
+{
+  "name": "@intervastu/scene",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic 3D scene assembly + depth-map export for Vastu-compliant room layouts.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "export-views": "tsx src/export_views.ts"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/three": "^0.180.0",
+    "esbuild": "^0.28.1",
+    "playwright": "^1.49.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
