@@ -1,8 +1,9 @@
-# Vastu Audit Engine — Local Test UI
+# InterVastu — Local Test UI
 
-A minimal local web UI for manually testing the existing Vastu audit engine
-(`genesis/engine/vastu_audit.py`). No database, no auth, no build step —
-just a thin FastAPI wrapper and a plain HTML/JS page.
+A local web UI for manually testing the existing Vastu audit engine
+(`genesis/engine/vastu_audit.py`), with real user accounts and per-user
+saved flats. No build step — a thin FastAPI wrapper, a small SQLite
+persistence layer, and a plain HTML/JS page.
 
 ## Run
 
@@ -19,6 +20,18 @@ Then open:
 http://127.0.0.1:8000/
 ```
 
+Register an account (username + password) on first visit — everything
+past the login screen requires being logged in, except the stateless
+one-off `/audit` endpoint.
+
+Cookies are marked `Secure` (HTTPS-only) by default. Running locally over
+plain `http://127.0.0.1` needs `VASTU_UI_INSECURE_COOKIES=1` set before
+starting the server, or the session cookie won't be stored by the browser:
+
+```bash
+VASTU_UI_INSECURE_COOKIES=1 uvicorn ui.server:app --reload
+```
+
 ## Notes
 
 - This UI adds no audit logic of its own — `/audit` calls the engine's
@@ -29,33 +42,61 @@ http://127.0.0.1:8000/
 - The compliance score uses placeholder severity weights defined in the
   engine (major=10, minor=3) — not schema-derived, not consultant-validated.
 
+## Auth
+
+Real accounts, not a trust-based label. See `auth.py` for the crypto/session
+rationale and `storage.py` for the schema.
+
+- **Passwords** are bcrypt-hashed (`auth.hash_password`/`verify_password`);
+  this codebase never stores or logs a plaintext password. A password must
+  be at least 8 characters; a username is 3-32 characters of
+  letters/numbers/`_`/`.`/`-`.
+- **Sessions** are server-side: `POST /auth/register` or `POST /auth/login`
+  creates a random token (`storage.sessions`), set as an httponly, SameSite
+  cookie. `POST /auth/logout` deletes that row, so logout immediately
+  revokes access — unlike a stateless/signed token (e.g. JWT), which would
+  stay valid until it expires no matter what the server does.
+- **Endpoints**: `POST /auth/register`, `POST /auth/login`, `POST
+  /auth/logout`, `GET /auth/me` (current user, or 401).
+- Every `/flats*` endpoint requires a valid session (`Depends(get_current_user)`
+  in `server.py`) and is scoped to that session's user — `storage.py`'s flat
+  functions filter by `user_id` directly in SQL, so "flat doesn't exist" and
+  "flat belongs to someone else" are indistinguishable to the caller (both
+  come back as a 404), rather than letting a wrong-owner request confirm
+  another user's flat id exists.
+
 ## Persistence
 
 Saved flats and their audit history live in a single SQLite file
 (`ui/vastu_ui.db` by default, gitignored — override the path with the
 `VASTU_UI_DB_PATH` env var, e.g. for tests or a deploy config).
 
-- **`storage.py`** owns the schema: a `flats` table (label + free-text
-  `owner` string — there is no authentication, `owner` is just a label to
-  tell whose flat is whose among a small set of known/trusted people) and a
-  `flat_versions` table (one row per save). Editing a flat's rooms/plot and
+- **`storage.py`** owns the schema: `users` (username, bcrypt hash),
+  `sessions` (token -> user), `flats` (label, owned by `user_id`), and
+  `flat_versions` (one row per save). Editing a flat's rooms/plot and
   saving again creates a **new version** rather than overwriting the old
   one, so every past run stays available — that's what makes "tweak it a
   little and check" work: load a flat, edit it, save, and the previous
   version's result is still sitting right there for comparison.
 - **Endpoints**: `POST /flats` (create + first version), `GET /flats`
-  (list, latest score per flat), `GET /flats/{id}` (full version history),
-  `POST /flats/{id}/versions` (save an edit as a new version), `GET
-  /flats/{id}/versions/{n}` (one specific version), `DELETE /flats/{id}`.
-  The original stateless `POST /audit` endpoint is unchanged and saves
-  nothing, for quick one-off checks.
-- The web page's "Saved flats" panel lists everything saved so far and can
-  load any flat's latest version back into the form for editing; saving
-  again asks whether to create a brand-new flat or add a new version to the
-  one you loaded.
+  (list, latest score per flat, scoped to the logged-in user), `GET
+  /flats/{id}` (full version history), `POST /flats/{id}/versions` (save an
+  edit as a new version), `GET /flats/{id}/versions/{n}` (one specific
+  version), `DELETE /flats/{id}`. The stateless `POST /audit` endpoint is
+  unchanged, saves nothing, and needs no login, for quick one-off checks.
+- The web page's "Saved flats" panel lists everything the logged-in user has
+  saved and can load any flat's latest version back into the form for
+  editing; saving again asks whether to create a brand-new flat or add a new
+  version to the one you loaded.
 - A single SQLite file is a deliberate choice for the current scale (a
-  handful of known users). It is not a multi-tenant production database —
-  revisit if this grows into a public, many-users product.
+  handful of registered users). It is not built for a public, many-tenant
+  product's request volume — revisit if this grows into that.
+- **Upgrading an existing dev database**: a file created before accounts
+  existed (`flats.owner` as free text, no `users`/`sessions` tables) is
+  rejected with a clear `RuntimeError` on startup rather than silently
+  half-working — see `storage._reject_legacy_pre_auth_schema`'s docstring.
+  Delete the old file (it's a local test artifact, gitignored) to get a
+  fresh one, or hand-migrate it per that error message.
 
 ## Placement suggestions
 

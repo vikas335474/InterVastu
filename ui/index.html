@@ -2,246 +2,460 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Vastu Audit Engine — Local Test UI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InterVastu — Audit Engine</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-  h1 { font-size: 1.4rem; }
-  h2 { font-size: 1.1rem; margin-top: 2rem; }
-  fieldset { margin-bottom: 1.5rem; }
-  .room-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
-  .room-row select { padding: 0.25rem; }
-  .flags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.85rem; }
-  button { cursor: pointer; padding: 0.35rem 0.8rem; }
-  #audit-btn { font-size: 1rem; padding: 0.5rem 1.2rem; margin-top: 1rem; }
-  .muted { color: #777; font-size: 0.85rem; }
-  .score-line { font-size: 1.3rem; font-weight: bold; margin-top: 1rem; }
-  .violation { border-left: 4px solid #ccc; padding: 0.5rem 0.75rem; margin: 0.5rem 0; background: #fafafa; }
-  .violation.major { border-color: #c0392b; background: #fdecea; }
-  .violation.minor { border-color: #d68910; background: #fef5e7; }
-  .warning { border-left: 4px solid #7f8c8d; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
-  .counts span { margin-right: 1.5rem; }
-  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: 0.8rem; color: #888; }
-  .remove-btn { color: #c0392b; }
-  .flat-row { display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #eee; }
-  .flat-row .meta { color: #777; font-size: 0.85rem; flex: 1; }
-  .flat-row button { font-size: 0.8rem; }
-  #save-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
-  #save-row input[type=text] { padding: 0.35rem; }
-  #save-status { font-size: 0.85rem; color: #2e7d32; }
-  .suggestion-extras { display: none; flex-basis: 100%; margin: 0.35rem 0 0.35rem 1.5rem; font-size: 0.85rem; }
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --border: #e3e6eb;
+    --text: #1c2230;
+    --text-muted: #6b7280;
+    --primary: #3454d1;
+    --primary-hover: #2a44ac;
+    --primary-soft: #eef1fd;
+    --major: #c0392b;
+    --major-soft: #fdecea;
+    --minor: #b7791f;
+    --minor-soft: #fef5e7;
+    --good: #1e7e42;
+    --good-soft: #eaf7ee;
+    --ritual: #6a4c93;
+    --ritual-soft: #f7f2fb;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(20, 24, 40, 0.04), 0 4px 16px rgba(20, 24, 40, 0.04);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .page { max-width: 960px; margin: 0 auto; padding: 0 1.25rem 4rem; }
+
+  /* --- Top bar ------------------------------------------------------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.1rem 0; margin-bottom: 1.5rem;
+  }
+  .brand { display: flex; align-items: baseline; gap: 0.6rem; }
+  .brand h1 { font-size: 1.25rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .tag { font-size: 0.8rem; color: var(--text-muted); }
+  .user-badge { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; }
+  .user-badge .name { font-weight: 600; }
+  .user-badge .avatar {
+    width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--primary);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; text-transform: uppercase;
+  }
+  .user-badge a { color: var(--text-muted); font-size: 0.85rem; text-decoration: none; }
+  .user-badge a:hover { color: var(--primary); }
+
+  /* --- Buttons / inputs ------------------------------------------------ */
+  button {
+    cursor: pointer; font: inherit; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text);
+    padding: 0.5rem 0.9rem; border-radius: 8px; transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover { background: #fafbfc; border-color: #d3d7de; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  button.subtle { border-color: transparent; background: transparent; color: var(--text-muted); }
+  button.subtle:hover { background: #eceef2; }
+  button.danger-text { color: var(--major); }
+
+  input[type=text], input[type=number], input[type=password], input[type=file],
+  select, textarea {
+    font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--border);
+    border-radius: 7px; background: var(--surface); color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-soft); border-color: var(--primary); }
+  label { font-size: 0.88rem; }
+
+  /* --- Cards ------------------------------------------------------------ */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.25rem 1.4rem; margin-bottom: 1.25rem;
+  }
+  .card h2 { font-size: 1rem; margin: 0 0 0.9rem; font-weight: 700; }
+  .card > p.muted:first-of-type { margin-top: -0.4rem; }
+  .muted { color: var(--text-muted); font-size: 0.85rem; }
+
+  /* --- Auth screen -------------------------------------------------- */
+  .auth-wrap { min-height: 80vh; display: flex; align-items: center; justify-content: center; }
+  .auth-card { width: 100%; max-width: 380px; text-align: left; }
+  .auth-card h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .auth-card .sub { margin: 0 0 1.3rem; }
+  .auth-field { margin-bottom: 0.9rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .auth-field input { width: 100%; }
+  .auth-actions { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 1.1rem; }
+  .auth-actions button { width: 100%; padding: 0.6rem; }
+  .auth-toggle { text-align: center; margin-top: 1rem; font-size: 0.85rem; }
+  .auth-toggle button { border: none; background: none; color: var(--primary); padding: 0; }
+  .auth-error { color: var(--major); font-size: 0.85rem; margin-top: 0.6rem; min-height: 1.1em; }
+
+  /* --- Rooms / plot form ----------------------------------------------- */
+  .field-row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; margin-bottom: 0.9rem; }
+  .field-row label { display: flex; flex-direction: column; gap: 0.3rem; }
+  .room-row {
+    display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap;
+    padding: 0.6rem 0.7rem; background: #fafbfd; border: 1px solid var(--border); border-radius: 8px;
+  }
+  .room-row select { padding: 0.4rem; }
+  .flags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-muted); }
+  .flags label { display: flex; align-items: center; gap: 0.25rem; }
+  .remove-btn { margin-left: auto; }
+  #add-room-btn { margin-top: 0.3rem; }
+  #audit-btn { font-size: 0.95rem; padding: 0.65rem 1.4rem; }
+
+  .suggestion-extras { display: none; flex-basis: 100%; margin: 0.4rem 0 0.2rem; font-size: 0.85rem; }
   .suggestion-extras.enabled { display: block; }
-  .suggestion-extras textarea { width: 100%; max-width: 480px; height: 3rem; font-family: monospace; font-size: 0.8rem; }
-  .suggestion-extras .dims input { width: 4rem; padding: 0.2rem; }
-  .suggestion-extras .hint { color: #999; }
-  .suggestion { border-left: 4px solid #2e7d32; background: #eef7ee; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
-  .suggestion.compromise { border-color: #d68910; background: #fef5e7; }
-  .suggestion-error { border-left: 4px solid #999; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; color: #555; }
-  #boundary-wrap textarea { width: 100%; max-width: 600px; height: 3rem; font-family: monospace; font-size: 0.8rem; }
-  .shape-panel { background: #f4f7fb; border: 1px solid #d6e0ee; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.9rem; }
-  .shape-panel .flag-bad { color: #c0392b; font-weight: bold; }
-  .shape-panel .flag-ok { color: #2e7d32; }
+  .suggestion-extras textarea { width: 100%; max-width: 480px; height: 3rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+  .suggestion-extras .dims { margin-top: 0.4rem; display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; }
+  .suggestion-extras .dims input { width: 4.5rem; padding: 0.3rem; }
+  .suggestion-extras .hint { color: var(--text-muted); }
+
+  /* --- Saved flats -------------------------------------------------- */
+  .flat-row {
+    display: flex; gap: 0.75rem; align-items: center; padding: 0.55rem 0.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .flat-row:last-child { border-bottom: none; }
+  .flat-row .name { font-weight: 600; }
+  .flat-row .meta { color: var(--text-muted); font-size: 0.83rem; flex: 1; }
+  .flat-row button { font-size: 0.8rem; padding: 0.35rem 0.7rem; }
+  .score-pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 2.4rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+    font-weight: 700; font-size: 0.8rem; background: var(--primary-soft); color: var(--primary);
+  }
+
+  #save-row { display: flex; gap: 0.6rem; align-items: center; margin-top: 1.1rem; flex-wrap: wrap; }
+  #save-row input[type=text] { flex: 1; min-width: 10rem; }
+  #save-status { font-size: 0.85rem; color: var(--good); }
+
+  /* --- Results -------------------------------------------------------- */
+  .counts { display: flex; gap: 1.75rem; margin-bottom: 0.5rem; }
+  .counts .count-label { font-size: 0.8rem; color: var(--text-muted); display: block; }
+  .counts .count-value { font-size: 1.3rem; font-weight: 700; }
+  .score-line { font-size: 1.7rem; font-weight: 800; margin: 0.6rem 0 0.2rem; letter-spacing: -0.02em; }
+  .score-line span { font-size: 1rem; font-weight: 500; color: var(--text-muted); }
+
+  .violation, .warning, .suggestion, .suggestion-error {
+    border-left: 4px solid var(--border); border-radius: 8px;
+    padding: 0.6rem 0.85rem; margin: 0.55rem 0; background: #fafbfd;
+  }
+  .violation.major { border-color: var(--major); background: var(--major-soft); }
+  .violation.minor { border-color: var(--minor); background: var(--minor-soft); }
+  .warning { border-color: #9aa2ad; }
+  .suggestion { border-color: var(--good); background: var(--good-soft); }
+  .suggestion.compromise { border-color: var(--minor); background: var(--minor-soft); }
+  .suggestion-error { border-color: #9aa2ad; color: var(--text-muted); }
+
+  h3.section-title { font-size: 0.92rem; margin: 1.3rem 0 0.5rem; }
+
+  /* --- Shape diagnosis panel ------------------------------------------- */
+  .shape-panel {
+    background: var(--primary-soft); border: 1px solid #d3dcf7; border-radius: 8px;
+    padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.9rem;
+  }
+  .shape-panel .flag-bad { color: var(--major); font-weight: 700; }
+  .shape-panel .flag-ok { color: var(--good); }
   .shape-panel table { border-collapse: collapse; margin-top: 0.4rem; }
   .shape-panel td { padding: 0.15rem 0.6rem 0.15rem 0; }
-  .ritual-details { margin-top: 0.4rem; font-size: 0.85rem; }
-  .ritual-details summary { cursor: pointer; color: #6a4c93; font-weight: 600; }
-  .ritual-box { background: #f7f2fb; border-left: 4px solid #6a4c93; padding: 0.5rem 0.75rem; margin-top: 0.35rem; }
-  .ritual-box .disclaimer { color: #777; font-style: italic; margin-top: 0.35rem; }
-  .trace-steps { font-size: 0.9rem; margin: 0.5rem 0; padding-left: 1.3rem; }
-  .trace-status { background: #eef2f8; border-left: 4px solid #4a6fa5; padding: 0.5rem 0.75rem; margin: 0.6rem 0; font-size: 0.9rem; }
-  #trace-canvas { border: 1px solid #bbb; touch-action: none; max-width: 100%; display: block; margin: 0.5rem 0; }
+
+  /* --- Ritual protocol -------------------------------------------------- */
+  .ritual-details { margin-top: 0.5rem; font-size: 0.85rem; }
+  .ritual-details summary { cursor: pointer; color: var(--ritual); font-weight: 600; }
+  .ritual-box { background: var(--ritual-soft); border-left: 4px solid var(--ritual); border-radius: 6px; padding: 0.6rem 0.8rem; margin-top: 0.4rem; }
+  .ritual-box .disclaimer { color: var(--text-muted); font-style: italic; margin-top: 0.4rem; }
+
+  /* --- Floor-plan tracing tool ------------------------------------------ */
+  .trace-steps { font-size: 0.9rem; margin: 0.5rem 0; padding-left: 1.3rem; color: var(--text); }
+  .trace-status { background: var(--primary-soft); border-left: 4px solid var(--primary); border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.6rem 0; font-size: 0.88rem; }
+  #calibration-badge.trace-status { border-color: var(--minor); background: var(--minor-soft); }
+  #trace-canvas { border: 1px solid var(--border); border-radius: 8px; touch-action: none; max-width: 100%; display: block; margin: 0.5rem 0; }
   #trace-canvas.mode-active { cursor: crosshair; }
   .trace-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
   .trace-controls button { font-size: 0.85rem; }
-  .trace-controls button.primary { background: #2e5aac; color: #fff; border: none; border-radius: 3px; padding: 0.4rem 0.8rem; }
   .trace-legend { font-size: 0.85rem; margin-top: 0.5rem; }
-  .trace-legend .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
-  .trace-legend .swatch { width: 0.8rem; height: 0.8rem; display: inline-block; border-radius: 2px; }
-  .trace-legend .legend-remove { font-size: 0.75rem; padding: 0.1rem 0.5rem; }
-  .compass-wrap { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
-  .compass-dial { width: 84px; height: 84px; border-radius: 50%; border: 2px solid #888; position: relative; cursor: grab; background: #fff; flex-shrink: 0; }
-  .compass-dial .n-label { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: #888; font-weight: bold; }
-  .compass-needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 34px; background: #c0392b; transform-origin: bottom center; transform: translate(-50%, -100%) rotate(0deg); pointer-events: none; }
+  .trace-legend .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+  .trace-legend .swatch { width: 0.8rem; height: 0.8rem; display: inline-block; border-radius: 3px; }
+  .trace-legend .legend-remove { font-size: 0.75rem; padding: 0.15rem 0.55rem; }
+
+  .compass-wrap { display: flex; align-items: center; gap: 0.9rem; margin-top: 0.85rem; }
+  .compass-dial { width: 84px; height: 84px; border-radius: 50%; border: 2px solid var(--border); position: relative; cursor: grab; background: var(--surface); flex-shrink: 0; }
+  .compass-dial .n-label { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: var(--text-muted); font-weight: 700; }
+  .compass-needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 34px; background: var(--major); transform-origin: bottom center; transform: translate(-50%, -100%) rotate(0deg); pointer-events: none; }
+
+  #boundary-wrap textarea, #propose-project-form textarea { width: 100%; max-width: 600px; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+
+  footer { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 560px) {
+    .field-row { flex-direction: column; gap: 0.7rem; }
+    .topbar { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+  }
 </style>
 </head>
 <body>
 
-<h1>Vastu Audit Engine — Local Test UI</h1>
-<p class="muted">Manual test harness over the existing audit engine. Save a flat to keep it and its audit history.</p>
+<div class="page">
 
-<fieldset>
-  <legend>Saved flats</legend>
-  <label>Your name/owner label: <input type="text" id="owner-name" placeholder="e.g. vikas"></label>
-  <div id="flats-list" class="muted">Loading…</div>
-</fieldset>
-
-<fieldset>
-  <legend>Your building / project</legend>
-  <p class="muted">
-    If your building already has a confirmed plan on record (e.g. sourced
-    from a RERA filing or a previous resident), load it here and skip
-    tracing entirely. If it's not listed, trace or enter your flat below as
-    usual — then optionally suggest what you traced so future owners in your
-    building don't have to redo this work. Suggestions are reviewed by an
-    admin before they go live for anyone else.
-  </p>
-  <label>Building/project: <select id="project-select"><option value="">-- none / not listed --</option></select></label>
-  <button type="button" id="load-project-btn" disabled>Load this project's base plan</button>
-  <div id="project-detail" class="muted"></div>
-
-  <div style="margin-top:0.75rem;">
-    <button type="button" id="propose-project-btn">Suggest this building's data (new project, or a correction)</button>
-  </div>
-  <div id="propose-project-form" style="display:none; margin-top:0.5rem;">
-    <p class="muted">
-      Sends the boundary/rooms/facade-bearing currently in the fields below
-      (from tracing or manual entry) as a suggestion — nothing changes for
-      anyone else until an admin reviews and approves it.
-    </p>
-    <label>Your name/label: <input type="text" id="proposal-submitted-by" placeholder="e.g. vikas"></label><br>
-    <p class="muted" id="proposal-mode-note"></p>
-    <span id="proposal-new-fields">
-      <label>Project/building name: <input type="text" id="proposal-project-name" placeholder="e.g. Skyline Towers, Phase 2"></label><br>
-      <label>RERA reference (optional): <input type="text" id="proposal-rera" placeholder="e.g. RERA/MH/12345 or a link"></label><br>
-      <label>Builder (optional): <input type="text" id="proposal-builder"></label><br>
-      <label>Address (optional): <input type="text" id="proposal-address"></label><br>
-    </span>
-    <label>Note (what this is based on): <textarea id="proposal-note" style="width:100%; max-width:480px; height:2.5rem;"></textarea></label><br>
-    <button type="button" id="submit-proposal-btn">Submit suggestion</button>
-    <span id="proposal-status" class="muted"></span>
-  </div>
-</fieldset>
-
-<fieldset>
-  <legend>Trace your floor plan (recommended)</legend>
-  <p class="muted">
-    Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
-    the coordinates the engine needs, with no typing of raw numbers required.
-    <strong>Nothing here auto-detects walls or rooms</strong> — you click where
-    they are, this tool only measures distances and angles from your clicks.
-    Everything it fills in stays visible in the Plot/Rooms fields below, so you
-    can always check or hand-edit it.
-  </p>
-  <ol class="trace-steps">
-    <li>Optional: upload a photo of your floor plan (skip this to trace on a plain grid instead).</li>
-    <li>If you uploaded a photo: set the scale — click two points a known real-world distance apart (e.g. a door), then type that distance.</li>
-    <li>Trace the flat's outer boundary.</li>
-    <li>Trace each room, one at a time (repeat as needed).</li>
-    <li>Set which way is North using the dial.</li>
-  </ol>
-
-  <label>Floor plan photo (optional): <input type="file" id="plan-image-input" accept="image/*"></label>
-  <button type="button" id="clear-image-btn" style="display:none;">Remove photo, use plain grid</button>
-  <span id="grid-scale-wrap">
-    &nbsp;|&nbsp;
-    <label>Grid scale (only used without a photo): each square = <input type="number" id="grid-feet-per-square" value="1" min="0.1" step="0.1" style="width:3.5rem;"> ft</label>
-  </span>
-
-  <div id="trace-status" class="trace-status">Trace directly on the grid below, or upload a floor plan photo first.</div>
-  <div id="calibration-badge" class="trace-status" style="display:none; border-color:#d68910; background:#fef5e7;"></div>
-
-  <canvas id="trace-canvas" width="720" height="480"></canvas>
-
-  <div class="trace-controls">
-    <button type="button" id="calibrate-btn" style="display:none;">Set scale (click 2 points)</button>
-    <button type="button" id="trace-boundary-btn" class="primary">Trace flat boundary</button>
-    <select id="trace-room-type"></select>
-    <button type="button" id="trace-room-btn" class="primary">Trace this room</button>
-    <button type="button" id="undo-point-btn">Undo last point</button>
-    <button type="button" id="finish-shape-btn" style="display:none;">Finish shape</button>
-    <button type="button" id="cancel-shape-btn" style="display:none;">Cancel</button>
-    <button type="button" id="reset-trace-btn">Reset tracing</button>
-  </div>
-
-  <div class="compass-wrap">
-    <div>
-      <strong>North direction</strong><br>
-      <span class="muted">Drag the needle to match your plan's North arrow or a compass reading. Leave it pointing up if the image's "up" is already North.</span>
+  <!-- ===================== Auth screen (login / register) ===================== -->
+  <div id="auth-screen" class="auth-wrap hidden">
+    <div class="card auth-card">
+      <h1 id="auth-title">Log in</h1>
+      <p class="muted sub" id="auth-sub">Sign in to save flats and view your audit history.</p>
+      <form id="auth-form">
+        <div class="auth-field">
+          <label for="auth-username">Username</label>
+          <input type="text" id="auth-username" autocomplete="username" required>
+        </div>
+        <div class="auth-field">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" autocomplete="current-password" required>
+        </div>
+        <div class="auth-actions">
+          <button type="submit" class="primary" id="auth-submit-btn">Log in</button>
+        </div>
+      </form>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">No account yet?</span>
+        <button type="button" id="auth-toggle-btn">Create one</button>
+      </div>
     </div>
-    <div class="compass-dial" id="compass-dial">
-      <span class="n-label">N</span>
-      <div class="compass-needle" id="compass-needle"></div>
+  </div>
+
+  <!-- ===================== Main app (requires login) ===================== -->
+  <div id="app" class="hidden">
+    <div class="topbar">
+      <div class="brand">
+        <h1>InterVastu</h1>
+        <span class="tag">Audit engine — test UI</span>
+      </div>
+      <div class="user-badge">
+        <a href="/admin">Admin</a>
+        <span class="avatar" id="user-avatar"></span>
+        <span class="name" id="user-name"></span>
+        <button type="button" class="subtle" id="logout-btn">Log out</button>
+      </div>
     </div>
-    <span id="compass-readout" class="muted">0.0° (facing image-up)</span>
+
+    <div class="card">
+      <h2>Saved flats</h2>
+      <div id="flats-list" class="muted">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2>Your building / project</h2>
+      <p class="muted">
+        If your building already has a confirmed plan on record (e.g. sourced
+        from a RERA filing or a previous resident), load it here and skip
+        tracing entirely. If it's not listed, trace or enter your flat below as
+        usual — then optionally suggest what you traced so future owners in your
+        building don't have to redo this work. Suggestions are reviewed by an
+        admin before they go live for anyone else.
+      </p>
+      <div class="field-row">
+        <label>Building/project
+          <select id="project-select"><option value="">-- none / not listed --</option></select>
+        </label>
+      </div>
+      <button type="button" id="load-project-btn" disabled>Load this project's base plan</button>
+      <div id="project-detail" class="muted" style="margin-top:0.5rem;"></div>
+
+      <div style="margin-top:0.9rem;">
+        <button type="button" id="propose-project-btn">Suggest this building's data (new project, or a correction)</button>
+      </div>
+      <div id="propose-project-form" class="hidden" style="margin-top:0.7rem;">
+        <p class="muted">
+          Sends the boundary/rooms/facade-bearing currently in the fields below
+          (from tracing or manual entry) as a suggestion — nothing changes for
+          anyone else until an admin reviews and approves it.
+        </p>
+        <div class="field-row">
+          <label>Your name/label
+            <input type="text" id="proposal-submitted-by" placeholder="e.g. vikas">
+          </label>
+        </div>
+        <p class="muted" id="proposal-mode-note"></p>
+        <div id="proposal-new-fields">
+          <div class="field-row">
+            <label>Project/building name
+              <input type="text" id="proposal-project-name" placeholder="e.g. Skyline Towers, Phase 2">
+            </label>
+            <label>RERA reference (optional)
+              <input type="text" id="proposal-rera" placeholder="e.g. RERA/MH/12345 or a link">
+            </label>
+          </div>
+          <div class="field-row">
+            <label>Builder (optional)
+              <input type="text" id="proposal-builder">
+            </label>
+            <label>Address (optional)
+              <input type="text" id="proposal-address">
+            </label>
+          </div>
+        </div>
+        <label>Note (what this is based on)</label><br>
+        <textarea id="proposal-note" style="height:2.5rem;"></textarea><br><br>
+        <button type="button" id="submit-proposal-btn">Submit suggestion</button>
+        <span id="proposal-status" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Trace your floor plan (recommended)</h2>
+      <p class="muted">
+        Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
+        the coordinates the engine needs, with no typing of raw numbers required.
+        <strong>Nothing here auto-detects walls or rooms</strong> — you click where
+        they are, this tool only measures distances and angles from your clicks.
+        Everything it fills in stays visible in the Plot/Rooms fields below, so you
+        can always check or hand-edit it.
+      </p>
+      <ol class="trace-steps">
+        <li>Optional: upload a photo of your floor plan (skip this to trace on a plain grid instead).</li>
+        <li>If you uploaded a photo: set the scale — click two points a known real-world distance apart (e.g. a door), then type that distance.</li>
+        <li>Trace the flat's outer boundary.</li>
+        <li>Trace each room, one at a time (repeat as needed).</li>
+        <li>Set which way is North using the dial.</li>
+      </ol>
+
+      <div class="field-row">
+        <label>Floor plan photo (optional)
+          <input type="file" id="plan-image-input" accept="image/*">
+        </label>
+        <button type="button" id="clear-image-btn" class="hidden">Remove photo, use plain grid</button>
+        <label id="grid-scale-wrap">Grid scale (only used without a photo): each square =
+          <input type="number" id="grid-feet-per-square" value="1" min="0.1" step="0.1" style="width:3.5rem;"> ft
+        </label>
+      </div>
+
+      <div id="trace-status" class="trace-status">Trace directly on the grid below, or upload a floor plan photo first.</div>
+      <div id="calibration-badge" class="trace-status hidden"></div>
+
+      <canvas id="trace-canvas" width="720" height="480"></canvas>
+
+      <div class="trace-controls">
+        <button type="button" id="calibrate-btn" class="hidden">Set scale (click 2 points)</button>
+        <button type="button" id="trace-boundary-btn" class="primary">Trace flat boundary</button>
+        <select id="trace-room-type"></select>
+        <button type="button" id="trace-room-btn" class="primary">Trace this room</button>
+        <button type="button" id="undo-point-btn">Undo last point</button>
+        <button type="button" id="finish-shape-btn" class="hidden">Finish shape</button>
+        <button type="button" id="cancel-shape-btn" class="hidden">Cancel</button>
+        <button type="button" id="reset-trace-btn">Reset tracing</button>
+      </div>
+
+      <div class="compass-wrap">
+        <div>
+          <strong>North direction</strong><br>
+          <span class="muted">Drag the needle to match your plan's North arrow or a compass reading. Leave it pointing up if the image's "up" is already North.</span>
+        </div>
+        <div class="compass-dial" id="compass-dial">
+          <span class="n-label">N</span>
+          <div class="compass-needle" id="compass-needle"></div>
+        </div>
+        <span id="compass-readout" class="muted">0.0° (facing image-up)</span>
+      </div>
+
+      <div id="trace-legend" class="trace-legend"></div>
+    </div>
+
+    <div class="card">
+      <h2>Plot</h2>
+      <div class="field-row">
+        <label>Shape
+          <select id="plot-shape"></select>
+        </label>
+        <label>Facade bearing (deg, true N=0)
+          <input type="number" id="facade-bearing" value="0" step="0.1" style="width:6rem;">
+        </label>
+      </div>
+      <div class="field-row" style="margin-bottom:0.3rem;">
+        <label style="flex-direction:row; align-items:center; gap:0.4rem;">
+          <input type="checkbox" id="brahmasthan-obstructed">
+          Brahmasthan (plot center) obstructed
+        </label>
+        <span id="obstruction-type-wrap" class="hidden">
+          <label>Obstruction type
+            <input type="text" id="obstruction-type" placeholder="e.g. toilet, staircase, pillar">
+          </label>
+        </span>
+      </div>
+      <p class="muted" style="margin-bottom:0.9rem;">Facade bearing only affects rooms with a polygon entered below.</p>
+
+      <div id="boundary-wrap">
+        <label>Flat boundary polygon (JSON [[x,y],...] ft, optional):</label><br>
+        <textarea id="plot-boundary" placeholder="e.g. [[0,0],[40,0],[40,27],[27,27],[27,41],[0,41]] — the L-shape / U-shape / whole outer wall trace"></textarea>
+        <p class="muted">
+          When supplied, this runs the geometric shape diagnosis: the true area
+          centroid vs. the bounding-box centre, a check for a hollow/external
+          centre (e.g. U-shaped flats), and detection of cut/missing compass
+          zones (e.g. a missing NE corner). Uses the facade bearing above as
+          the plan's north offset. Leave blank to skip — the rest of the audit
+          is unaffected either way.
+        </p>
+      </div>
+      <label style="display:flex; flex-direction:row; align-items:center; gap:0.4rem;">
+        <input type="checkbox" id="include-ritual">
+        Include traditional ritual/activation protocol with remedies
+      </label>
+      <p class="muted" style="margin-bottom:0;">
+        Optional. Adds the classical directional deity, mantra, and Prana
+        Pratishtha activation sequence alongside any hollow-centre / missing-zone
+        remedy. This is religious/cultural content, not a validated intervention
+        — off by default, shown only if you ask for it.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Rooms</h2>
+      <p class="muted">
+        For MasterBedroom / GuestBedroom / ChildrenBedroom / Kitchen / LivingRoom, you can
+        optionally enter the room's polygon to get a concrete furniture-placement suggestion
+        (bed/stove position, or the recommended heavy-furniture wall) alongside the zone audit.
+      </p>
+      <div id="rooms-container"></div>
+      <button id="add-room-btn" type="button">+ Add room</button>
+    </div>
+
+    <button id="audit-btn" class="primary" type="button">Audit (no save)</button>
+
+    <div id="save-row">
+      <input type="text" id="flat-label" placeholder="Flat label (e.g. Unit 12)">
+      <input type="text" id="version-note" placeholder="Note for this version (optional)">
+      <button id="save-new-btn" type="button">Save as new flat</button>
+      <button id="save-version-btn" type="button" disabled>Save as new version of loaded flat</button>
+      <span id="save-status"></span>
+    </div>
+
+    <div id="results"></div>
+
+    <footer>
+      Educational tool. Based on draft rule schema v0.2 pending consultant sign-off.
+      Vastu is a traditional belief system, not empirically validated.
+    </footer>
   </div>
 
-  <div id="trace-legend" class="trace-legend"></div>
-</fieldset>
-
-<fieldset>
-  <legend>Plot</legend>
-  <label>Shape:
-    <select id="plot-shape"></select>
-  </label>
-  <br><br>
-  <label>
-    <input type="checkbox" id="brahmasthan-obstructed">
-    Brahmasthan (plot center) obstructed
-  </label>
-  <span id="obstruction-type-wrap" style="display:none; margin-left:1rem;">
-    <label>Obstruction type: <input type="text" id="obstruction-type" placeholder="e.g. toilet, staircase, pillar"></label>
-  </span>
-  <br><br>
-  <label>Facade bearing (deg, true N=0, for placement suggestions below):
-    <input type="number" id="facade-bearing" value="0" step="0.1" style="width:5rem;">
-  </label>
-  <span class="muted">Only affects rooms with a polygon entered (see below).</span>
-  <br><br>
-  <div id="boundary-wrap">
-    <label>Flat boundary polygon (JSON [[x,y],...] ft, optional):</label><br>
-    <textarea id="plot-boundary" placeholder="e.g. [[0,0],[40,0],[40,27],[27,27],[27,41],[0,41]] — the L-shape / U-shape / whole outer wall trace"></textarea>
-    <p class="muted">
-      When supplied, this runs the geometric shape diagnosis: the true area
-      centroid vs. the bounding-box centre, a check for a hollow/external
-      centre (e.g. U-shaped flats), and detection of cut/missing compass
-      zones (e.g. a missing NE corner). Uses the facade bearing above as
-      the plan's north offset. Leave blank to skip — the rest of the audit
-      is unaffected either way.
-    </p>
-  </div>
-  <label>
-    <input type="checkbox" id="include-ritual">
-    Include traditional ritual/activation protocol with remedies
-  </label>
-  <p class="muted">
-    Optional. Adds the classical directional deity, mantra, and Prana
-    Pratishtha activation sequence alongside any hollow-centre / missing-zone
-    remedy. This is religious/cultural content, not a validated intervention
-    — off by default, shown only if you ask for it.
-  </p>
-</fieldset>
-
-<fieldset>
-  <legend>Rooms</legend>
-  <p class="muted">
-    For MasterBedroom / GuestBedroom / ChildrenBedroom / Kitchen / LivingRoom, you can
-    optionally enter the room's polygon to get a concrete furniture-placement suggestion
-    (bed/stove position, or the recommended heavy-furniture wall) alongside the zone audit.
-  </p>
-  <div id="rooms-container"></div>
-  <button id="add-room-btn" type="button">+ Add room</button>
-</fieldset>
-
-<button id="audit-btn" type="button">Audit (no save)</button>
-
-<div id="save-row">
-  <input type="text" id="flat-label" placeholder="Flat label (e.g. Unit 12)">
-  <input type="text" id="version-note" placeholder="Note for this version (optional)">
-  <button id="save-new-btn" type="button">Save as new flat</button>
-  <button id="save-version-btn" type="button" disabled>Save as new version of loaded flat</button>
-  <span id="save-status"></span>
 </div>
-
-<div id="results"></div>
-
-<footer>
-  Educational tool. Based on draft rule schema v0.2 pending consultant sign-off.
-  Vastu is a traditional belief system, not empirically validated.
-</footer>
 
 <script>
 let schemaInfo = null;
 let roomIdCounter = 0;
 let loadedFlatId = null;
+let authMode = 'login'; // 'login' | 'register'
 
 // Mirrors suggestions.py's scope + DEFAULT_FURNITURE_DIMENSIONS -- kept in
 // sync manually since this is a thin display hint, not a source of truth
@@ -254,6 +468,99 @@ const DEFAULT_DIMENSIONS = {
   Kitchen: [2.0, 2.0],
 };
 
+// --- Auth --------------------------------------------------------------
+
+function showAuthScreen() {
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+}
+
+function showApp(user) {
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-name').textContent = user.username;
+  document.getElementById('user-avatar').textContent = user.username.slice(0, 1);
+}
+
+function setAuthError(msg) {
+  document.getElementById('auth-error').textContent = msg || '';
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  setAuthError('');
+  const isLogin = mode === 'login';
+  document.getElementById('auth-title').textContent = isLogin ? 'Log in' : 'Create your account';
+  document.getElementById('auth-sub').textContent = isLogin
+    ? 'Sign in to save flats and view your audit history.'
+    : 'Register to start saving flats and audit history.';
+  document.getElementById('auth-submit-btn').textContent = isLogin ? 'Log in' : 'Create account';
+  document.getElementById('auth-toggle-text').textContent = isLogin ? 'No account yet?' : 'Already have an account?';
+  document.getElementById('auth-toggle-btn').textContent = isLogin ? 'Create one' : 'Log in';
+  document.getElementById('auth-password').autocomplete = isLogin ? 'current-password' : 'new-password';
+}
+
+async function checkSession() {
+  const resp = await fetch('/auth/me', { cache: 'no-store' });
+  if (resp.ok) {
+    const user = await resp.json();
+    showApp(user);
+    initApp();
+  } else {
+    showAuthScreen();
+  }
+}
+
+async function submitAuthForm(e) {
+  e.preventDefault();
+  setAuthError('');
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    setAuthError(body.detail || 'Something went wrong.');
+    return;
+  }
+  const user = await resp.json();
+  document.getElementById('auth-form').reset();
+  showApp(user);
+  initApp();
+}
+
+async function logout() {
+  await fetch('/auth/logout', { method: 'POST' });
+  loadedFlatId = null;
+  setAuthMode('login');
+  showAuthScreen();
+}
+
+document.getElementById('auth-form').addEventListener('submit', submitAuthForm);
+document.getElementById('auth-toggle-btn').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'register' : 'login'));
+document.getElementById('logout-btn').addEventListener('click', logout);
+
+// --- Main app (only runs once logged in) --------------------------------
+
+let appInitialized = false;
+
+function initApp() {
+  if (appInitialized) {
+    loadFlatsList();
+    loadProjectsList();
+    return;
+  }
+  appInitialized = true;
+  loadSchemaInfo();
+  loadFlatsList();
+  loadProjectsList();
+}
+
 async function loadSchemaInfo() {
   const resp = await fetch('/schema-info', { cache: 'no-store' });
   schemaInfo = await resp.json();
@@ -264,7 +571,7 @@ async function loadSchemaInfo() {
   populateTraceRoomTypes();
 
   document.getElementById('brahmasthan-obstructed').addEventListener('change', (e) => {
-    document.getElementById('obstruction-type-wrap').style.display = e.target.checked ? 'inline' : 'none';
+    document.getElementById('obstruction-type-wrap').classList.toggle('hidden', !e.target.checked);
   });
 
   document.getElementById('add-room-btn').addEventListener('click', addRoomRow);
@@ -285,7 +592,7 @@ function addRoomRow() {
     <select class="room-type">${roomOptions}</select>
     <select class="room-zone">${zoneOptions}</select>
     <span class="flags"></span>
-    <button type="button" class="remove-btn">Remove</button>
+    <button type="button" class="remove-btn subtle danger-text">Remove</button>
     <div class="suggestion-extras">
       <label>Polygon (JSON [[x,y],...] ft):</label><br>
       <textarea class="room-polygon" placeholder="e.g. [[0,0],[12,0],[12,14],[0,14]]"></textarea>
@@ -448,9 +755,9 @@ function renderShapeDiagnosisPanel(diag) {
 function renderResults(result) {
   const el = document.getElementById('results');
 
-  let html = '';
+  let html = '<div class="card">';
   if (planImage && !calibrated && (boundaryShape || tracedRooms.length)) {
-    html += `<div class="warning" style="border-color:#d68910; background:#fef5e7;">
+    html += `<div class="warning" style="border-color:var(--minor); background:var(--minor-soft);">
       <strong>Traced without a scale.</strong> Shape and direction findings below
       (hollow-centre, missing zones, room compass zones) are still correct — they
       only depend on angles and area proportions. Any distance/area figures shown
@@ -460,15 +767,15 @@ function renderResults(result) {
   }
   html += `<h2>Results</h2>`;
   html += `<div class="counts">
-    <span>Major violations: <strong>${result.major_count}</strong></span>
-    <span>Minor violations: <strong>${result.minor_count}</strong></span>
+    <div><span class="count-label">Major violations</span><span class="count-value">${result.major_count}</span></div>
+    <div><span class="count-label">Minor violations</span><span class="count-value">${result.minor_count}</span></div>
   </div>`;
-  html += `<div class="score-line">Compliance score: ${result.compliance_score} / 100</div>`;
+  html += `<div class="score-line">${result.compliance_score} <span>/ 100 compliance score</span></div>`;
   html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.</p>`;
 
   html += renderShapeDiagnosisPanel(result.shape_diagnosis);
 
-  html += `<h3>Violations</h3>`;
+  html += `<h3 class="section-title">Violations</h3>`;
   const allViolations = [];
   result.rooms.forEach(r => {
     r.violations.forEach(v => {
@@ -494,21 +801,21 @@ function renderResults(result) {
 
   const shapeNotes = [...(result.shape_defect_notes || []), ...(result.brahmasthan_notes || [])];
   if (shapeNotes.length) {
-    html += `<h3>Geometry notes (informational, not scored)</h3>`;
+    html += `<h3 class="section-title">Geometry notes (informational, not scored)</h3>`;
     shapeNotes.forEach(n => {
       html += `<div class="warning"><strong>${n.room || ''}</strong> — ${n.rule_type}: ${n.message || ''}</div>`;
     });
   }
 
   if (result.unscored_warnings && result.unscored_warnings.length) {
-    html += `<h3>Unscored warnings</h3>`;
+    html += `<h3 class="section-title">Unscored warnings</h3>`;
     result.unscored_warnings.forEach(w => {
       html += `<div class="warning"><strong>${w.room || ''}</strong> — ${w.rule_type}: ${w.message || ''}</div>`;
     });
   }
 
   if (result.suggestions && result.suggestions.length) {
-    html += `<h3>Placement suggestions</h3>`;
+    html += `<h3 class="section-title">Placement suggestions</h3>`;
     html += `<p class="muted">Geometric suggestions from the furniture-placement solver, for rooms where a polygon was entered. Position/rotation are in the room's own local feet coordinates.</p>`;
     result.suggestions.forEach(s => {
       if (s.suggestion_error) {
@@ -527,6 +834,7 @@ function renderResults(result) {
     });
   }
 
+  html += '</div>';
   el.innerHTML = html;
 }
 
@@ -547,15 +855,12 @@ async function runAudit() {
 function setSaveStatus(msg, isError) {
   const el = document.getElementById('save-status');
   el.textContent = msg;
-  el.style.color = isError ? '#c0392b' : '#2e7d32';
-}
-
-function ownerName() {
-  return document.getElementById('owner-name').value.trim();
+  el.style.color = isError ? 'var(--major)' : 'var(--good)';
 }
 
 async function loadFlatsList() {
   const resp = await fetch('/flats', { cache: 'no-store' });
+  if (resp.status === 401) { showAuthScreen(); return; }
   const flats = await resp.json();
   renderFlatsList(flats);
 }
@@ -563,15 +868,15 @@ async function loadFlatsList() {
 function renderFlatsList(flats) {
   const el = document.getElementById('flats-list');
   if (!flats.length) {
-    el.innerHTML = '<p class="muted">No saved flats yet.</p>';
+    el.innerHTML = '<p class="muted">No saved flats yet — audit a layout below, then save it.</p>';
     return;
   }
   el.innerHTML = flats.map(f => `
     <div class="flat-row">
-      <strong>${f.label}</strong>
+      <span class="name">${f.label}</span>
+      <span class="score-pill">${f.latest_compliance_score}</span>
       <span class="meta">
-        owner: ${f.owner} · v${f.latest_version} · score ${f.latest_compliance_score}
-        (${f.latest_major_count} major, ${f.latest_minor_count} minor)
+        v${f.latest_version} · ${f.latest_major_count} major, ${f.latest_minor_count} minor
       </span>
       <button type="button" class="load-flat-btn" data-id="${f.id}">Load</button>
     </div>
@@ -583,6 +888,7 @@ function renderFlatsList(flats) {
 
 async function loadFlatIntoForm(flatId) {
   const resp = await fetch(`/flats/${flatId}`, { cache: 'no-store' });
+  if (resp.status === 401) { showAuthScreen(); return; }
   if (!resp.ok) {
     setSaveStatus('Could not load that flat.', true);
     return;
@@ -592,7 +898,6 @@ async function loadFlatIntoForm(flatId) {
 
   populateFormFromInput(latest.input);
   document.getElementById('flat-label').value = flat.label;
-  document.getElementById('owner-name').value = flat.owner;
   document.getElementById('version-note').value = '';
 
   loadedFlatId = flat.id;
@@ -606,7 +911,7 @@ function populateFormFromInput(input) {
   const plot = input.plot || {};
   document.getElementById('plot-shape').value = plot.shape || '';
   document.getElementById('brahmasthan-obstructed').checked = !!plot.brahmasthan_obstructed;
-  document.getElementById('obstruction-type-wrap').style.display = plot.brahmasthan_obstructed ? 'inline' : 'none';
+  document.getElementById('obstruction-type-wrap').classList.toggle('hidden', !plot.brahmasthan_obstructed);
   document.getElementById('obstruction-type').value = plot.brahmasthan_obstruction_type || '';
   document.getElementById('facade-bearing').value = input.facade_bearing_deg || 0;
   document.getElementById('plot-boundary').value = input.boundary ? JSON.stringify(input.boundary) : '';
@@ -645,9 +950,8 @@ function populateFormFromInput(input) {
 
 async function saveNewFlat() {
   const label = document.getElementById('flat-label').value.trim();
-  const owner = ownerName();
-  if (!label || !owner) {
-    setSaveStatus('Owner name and a flat label are both required to save.', true);
+  if (!label) {
+    setSaveStatus('A flat label is required to save.', true);
     return;
   }
   const { polygonErrors, ...layout } = assembleLayout();
@@ -655,13 +959,14 @@ async function saveNewFlat() {
     setSaveStatus(`Fix polygon JSON before saving: ${polygonErrors.join('; ')}`, true);
     return;
   }
-  const payload = { ...layout, label, owner, note: document.getElementById('version-note').value.trim() || null };
+  const payload = { ...layout, label, note: document.getElementById('version-note').value.trim() || null };
 
   const resp = await fetch('/flats', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (resp.status === 401) { showAuthScreen(); return; }
   if (!resp.ok) {
     setSaveStatus('Save failed.', true);
     return;
@@ -691,6 +996,7 @@ async function saveVersion() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (resp.status === 401) { showAuthScreen(); return; }
   if (!resp.ok) {
     setSaveStatus('Save failed.', true);
     return;
@@ -706,7 +1012,8 @@ async function saveVersion() {
 // Purely a pre-fill/suggest convenience over the SAME fields the rest of the
 // form already uses (#plot-boundary, #facade-bearing, each room's
 // .room-polygon) -- loading a project doesn't create any new field, and
-// proposing one just reads the current values of those same fields.
+// proposing one just reads the current values of those same fields. Public
+// endpoints (no login needed to browse/propose), same as before auth existed.
 // ---------------------------------------------------------------------------
 
 let projectsCache = [];
@@ -789,8 +1096,8 @@ async function loadSelectedProjectBasePlan() {
 
 function toggleProposeForm() {
   const form = document.getElementById('propose-project-form');
-  const showing = form.style.display !== 'none';
-  form.style.display = showing ? 'none' : '';
+  const showing = !form.classList.contains('hidden');
+  form.classList.toggle('hidden', showing);
   if (!showing) updateProjectDetail();
 }
 
@@ -812,7 +1119,7 @@ async function submitProjectProposal() {
   const statusEl = document.getElementById('proposal-status');
   if (!submittedBy) {
     statusEl.textContent = 'Your name/label is required.';
-    statusEl.style.color = '#c0392b';
+    statusEl.style.color = 'var(--major)';
     return;
   }
 
@@ -821,7 +1128,7 @@ async function submitProjectProposal() {
   const boundaryText = document.getElementById('plot-boundary').value.trim();
   if (boundaryText) {
     try { boundary = JSON.parse(boundaryText); }
-    catch (e) { statusEl.textContent = 'Boundary field has invalid JSON.'; statusEl.style.color = '#c0392b'; return; }
+    catch (e) { statusEl.textContent = 'Boundary field has invalid JSON.'; statusEl.style.color = 'var(--major)'; return; }
   }
   const facadeBearing = parseFloat(document.getElementById('facade-bearing').value);
 
@@ -840,7 +1147,7 @@ async function submitProjectProposal() {
     payload.proposed_address = document.getElementById('proposal-address').value.trim() || null;
     if (!payload.proposed_name) {
       statusEl.textContent = 'Project/building name is required for a new project.';
-      statusEl.style.color = '#c0392b';
+      statusEl.style.color = 'var(--major)';
       return;
     }
   }
@@ -853,11 +1160,11 @@ async function submitProjectProposal() {
   const body = await resp.json();
   if (!resp.ok) {
     statusEl.textContent = body.detail || 'Submission failed.';
-    statusEl.style.color = '#c0392b';
+    statusEl.style.color = 'var(--major)';
     return;
   }
   statusEl.textContent = `Submitted (proposal #${body.proposal_id}) — pending admin review.`;
-  statusEl.style.color = '#2e7d32';
+  statusEl.style.color = 'var(--good)';
 }
 
 document.getElementById('project-select').addEventListener('change', updateProjectDetail);
@@ -907,9 +1214,9 @@ function initGrid() {
   traceCanvas.height = 480;
   pxPerFoot = GRID_PX / gridFeetPerSquare;
   calibrated = true; // an explicit "1 square = X ft" IS a real scale, just not photo-calibrated
-  document.getElementById('calibrate-btn').style.display = 'none';
-  document.getElementById('clear-image-btn').style.display = 'none';
-  document.getElementById('grid-scale-wrap').style.display = '';
+  document.getElementById('calibrate-btn').classList.add('hidden');
+  document.getElementById('clear-image-btn').classList.add('hidden');
+  document.getElementById('grid-scale-wrap').classList.remove('hidden');
   updateCalibrationBadge();
   redrawTrace();
 }
@@ -938,9 +1245,9 @@ function loadPlanImage(file) {
     boundaryShape = null;
     tracedRooms = [];
     document.getElementById('plot-boundary').value = '';
-    document.getElementById('calibrate-btn').style.display = '';
-    document.getElementById('clear-image-btn').style.display = '';
-    document.getElementById('grid-scale-wrap').style.display = 'none';
+    document.getElementById('calibrate-btn').classList.remove('hidden');
+    document.getElementById('clear-image-btn').classList.remove('hidden');
+    document.getElementById('grid-scale-wrap').classList.add('hidden');
     traceMode = 'idle';
     draftPoints = [];
     calibPoints = [];
@@ -956,10 +1263,10 @@ function updateCalibrationBadge() {
   const el = document.getElementById('calibration-badge');
   if (planImage && !calibrated) {
     el.textContent = '⚠ Not calibrated — distances/areas below are placeholder units, not real feet, until you set the scale. Shape and direction findings (hollow-centre, missing zones, room compass zones) are unaffected and already correct.';
-    el.style.display = '';
+    el.classList.remove('hidden');
   } else {
     el.textContent = '';
-    el.style.display = 'none';
+    el.classList.add('hidden');
   }
 }
 
@@ -1087,7 +1394,7 @@ function handleTracePoint(clientX, clientY) {
 
   if (traceMode === 'boundary' || traceMode === 'room') {
     draftPoints.push([x, y]);
-    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+    document.getElementById('finish-shape-btn').classList.toggle('hidden', draftPoints.length < 3);
     const what = traceMode === 'boundary' ? "flat's outer wall" : 'room';
     setTraceStatus(`${draftPoints.length} point(s) placed. Keep clicking around the ${what}, then "Finish shape" (need at least 3 points).`);
     redrawTrace();
@@ -1108,8 +1415,8 @@ function startMode(newMode) {
   traceMode = newMode;
   draftPoints = [];
   calibPoints = [];
-  document.getElementById('finish-shape-btn').style.display = 'none';
-  document.getElementById('cancel-shape-btn').style.display = newMode === 'idle' ? 'none' : '';
+  document.getElementById('finish-shape-btn').classList.add('hidden');
+  document.getElementById('cancel-shape-btn').classList.toggle('hidden', newMode === 'idle');
   traceCanvas.classList.add('mode-active');
   if (newMode === 'calibrate') {
     setTraceStatus('Click the first point of a wall/edge whose real length you know.');
@@ -1146,8 +1453,8 @@ function finishShape() {
   traceMode = 'idle';
   draftPoints = [];
   traceCanvas.classList.remove('mode-active');
-  document.getElementById('finish-shape-btn').style.display = 'none';
-  document.getElementById('cancel-shape-btn').style.display = 'none';
+  document.getElementById('finish-shape-btn').classList.add('hidden');
+  document.getElementById('cancel-shape-btn').classList.add('hidden');
   renderTraceLegend();
   redrawTrace();
 }
@@ -1157,8 +1464,8 @@ function cancelShape() {
   calibPoints = [];
   traceMode = 'idle';
   traceCanvas.classList.remove('mode-active');
-  document.getElementById('finish-shape-btn').style.display = 'none';
-  document.getElementById('cancel-shape-btn').style.display = 'none';
+  document.getElementById('finish-shape-btn').classList.add('hidden');
+  document.getElementById('cancel-shape-btn').classList.add('hidden');
   setTraceStatus('Cancelled. Choose an action to continue tracing.');
   redrawTrace();
 }
@@ -1168,7 +1475,7 @@ function undoLastPoint() {
     calibPoints.pop();
   } else if (draftPoints.length) {
     draftPoints.pop();
-    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+    document.getElementById('finish-shape-btn').classList.toggle('hidden', draftPoints.length < 3);
   }
   redrawTrace();
 }
@@ -1313,9 +1620,7 @@ document.getElementById('audit-btn').addEventListener('click', runAudit);
 document.getElementById('save-new-btn').addEventListener('click', saveNewFlat);
 document.getElementById('save-version-btn').addEventListener('click', saveVersion);
 
-loadSchemaInfo();
-loadFlatsList();
-loadProjectsList();
+checkSession();
 </script>
 
 </body>
