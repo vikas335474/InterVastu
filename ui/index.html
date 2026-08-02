@@ -75,6 +75,43 @@
 </fieldset>
 
 <fieldset>
+  <legend>Your building / project</legend>
+  <p class="muted">
+    If your building already has a confirmed plan on record (e.g. sourced
+    from a RERA filing or a previous resident), load it here and skip
+    tracing entirely. If it's not listed, trace or enter your flat below as
+    usual — then optionally suggest what you traced so future owners in your
+    building don't have to redo this work. Suggestions are reviewed by an
+    admin before they go live for anyone else.
+  </p>
+  <label>Building/project: <select id="project-select"><option value="">-- none / not listed --</option></select></label>
+  <button type="button" id="load-project-btn" disabled>Load this project's base plan</button>
+  <div id="project-detail" class="muted"></div>
+
+  <div style="margin-top:0.75rem;">
+    <button type="button" id="propose-project-btn">Suggest this building's data (new project, or a correction)</button>
+  </div>
+  <div id="propose-project-form" style="display:none; margin-top:0.5rem;">
+    <p class="muted">
+      Sends the boundary/rooms/facade-bearing currently in the fields below
+      (from tracing or manual entry) as a suggestion — nothing changes for
+      anyone else until an admin reviews and approves it.
+    </p>
+    <label>Your name/label: <input type="text" id="proposal-submitted-by" placeholder="e.g. vikas"></label><br>
+    <p class="muted" id="proposal-mode-note"></p>
+    <span id="proposal-new-fields">
+      <label>Project/building name: <input type="text" id="proposal-project-name" placeholder="e.g. Skyline Towers, Phase 2"></label><br>
+      <label>RERA reference (optional): <input type="text" id="proposal-rera" placeholder="e.g. RERA/MH/12345 or a link"></label><br>
+      <label>Builder (optional): <input type="text" id="proposal-builder"></label><br>
+      <label>Address (optional): <input type="text" id="proposal-address"></label><br>
+    </span>
+    <label>Note (what this is based on): <textarea id="proposal-note" style="width:100%; max-width:480px; height:2.5rem;"></textarea></label><br>
+    <button type="button" id="submit-proposal-btn">Submit suggestion</button>
+    <span id="proposal-status" class="muted"></span>
+  </div>
+</fieldset>
+
+<fieldset>
   <legend>Trace your floor plan (recommended)</legend>
   <p class="muted">
     Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
@@ -218,7 +255,7 @@ const DEFAULT_DIMENSIONS = {
 };
 
 async function loadSchemaInfo() {
-  const resp = await fetch('/schema-info');
+  const resp = await fetch('/schema-info', { cache: 'no-store' });
   schemaInfo = await resp.json();
 
   const shapeSelect = document.getElementById('plot-shape');
@@ -518,7 +555,7 @@ function ownerName() {
 }
 
 async function loadFlatsList() {
-  const resp = await fetch('/flats');
+  const resp = await fetch('/flats', { cache: 'no-store' });
   const flats = await resp.json();
   renderFlatsList(flats);
 }
@@ -545,7 +582,7 @@ function renderFlatsList(flats) {
 }
 
 async function loadFlatIntoForm(flatId) {
-  const resp = await fetch(`/flats/${flatId}`);
+  const resp = await fetch(`/flats/${flatId}`, { cache: 'no-store' });
   if (!resp.ok) {
     setSaveStatus('Could not load that flat.', true);
     return;
@@ -663,6 +700,170 @@ async function saveVersion() {
   renderResults(body.result);
   loadFlatsList();
 }
+
+// ---------------------------------------------------------------------------
+// Projects: shared building-level data (see storage.py's module docstring).
+// Purely a pre-fill/suggest convenience over the SAME fields the rest of the
+// form already uses (#plot-boundary, #facade-bearing, each room's
+// .room-polygon) -- loading a project doesn't create any new field, and
+// proposing one just reads the current values of those same fields.
+// ---------------------------------------------------------------------------
+
+let projectsCache = [];
+
+async function loadProjectsList() {
+  const resp = await fetch('/projects', { cache: 'no-store' });
+  projectsCache = await resp.json();
+  const select = document.getElementById('project-select');
+  const current = select.value;
+  select.innerHTML = '<option value="">-- none / not listed --</option>' +
+    projectsCache.map(p => `<option value="${p.id}">${p.name} (v${p.latest_version})</option>`).join('');
+  select.value = current;
+  updateProjectDetail();
+}
+
+function updateProjectDetail() {
+  const id = document.getElementById('project-select').value;
+  const detail = document.getElementById('project-detail');
+  const loadBtn = document.getElementById('load-project-btn');
+  const modeNote = document.getElementById('proposal-mode-note');
+  const newFields = document.getElementById('proposal-new-fields');
+
+  if (!id) {
+    detail.textContent = '';
+    loadBtn.disabled = true;
+    modeNote.textContent = 'No project selected above, so this suggests a brand-new project.';
+    newFields.style.display = '';
+    return;
+  }
+  const p = projectsCache.find(p => String(p.id) === id);
+  loadBtn.disabled = false;
+  detail.textContent = p
+    ? [p.rera_reference && `RERA: ${p.rera_reference}`, p.builder && `Builder: ${p.builder}`, p.address]
+        .filter(Boolean).join(' · ') || 'No additional details on record.'
+    : '';
+  modeNote.textContent = `A project is selected above, so this suggests a CORRECTION/update to "${p ? p.name : id}" instead of a new project.`;
+  newFields.style.display = 'none';
+}
+
+async function loadSelectedProjectBasePlan() {
+  const id = document.getElementById('project-select').value;
+  if (!id) return;
+  const resp = await fetch(`/projects/${id}`, { cache: 'no-store' });
+  if (!resp.ok) {
+    setTraceStatus('Could not load that project.');
+    return;
+  }
+  const project = await resp.json();
+  const latest = project.versions[project.versions.length - 1];
+  if (!latest) {
+    setTraceStatus('That project has no confirmed data yet.');
+    return;
+  }
+
+  if (latest.boundary) {
+    document.getElementById('plot-boundary').value = JSON.stringify(latest.boundary);
+  }
+  if (latest.facade_bearing_deg !== null && latest.facade_bearing_deg !== undefined) {
+    document.getElementById('facade-bearing').value = latest.facade_bearing_deg;
+    setCompassAngle(latest.facade_bearing_deg);
+  }
+  let roomsAdded = 0;
+  (latest.base_rooms || []).forEach(room => {
+    if (!room.polygon) return;
+    addRoomRow();
+    const row = document.querySelector('.room-row:last-child');
+    row.querySelector('.room-type').value = room.name;
+    updateFlags(row);
+    row.querySelector('.room-polygon').value = JSON.stringify(room.polygon);
+    roomsAdded++;
+  });
+
+  clearTraceUiState();
+  setTraceStatus(
+    `Loaded "${project.name}"'s base plan (v${latest.version_number}): boundary` +
+    (roomsAdded ? ` + ${roomsAdded} base room(s)` : '') +
+    `. This is a typical/confirmed layout for the building — adjust anything that differs in your specific unit, then trace/add any rooms not already listed.`
+  );
+}
+
+function toggleProposeForm() {
+  const form = document.getElementById('propose-project-form');
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : '';
+  if (!showing) updateProjectDetail();
+}
+
+function gatherCurrentRoomsForProposal() {
+  const rooms = [];
+  document.querySelectorAll('.room-row').forEach(row => {
+    const name = row.querySelector('.room-type').value;
+    const polyText = row.querySelector('.room-polygon').value.trim();
+    if (!polyText) return;
+    try {
+      rooms.push({ name, polygon: JSON.parse(polyText) });
+    } catch (e) { /* skip rooms with invalid polygon JSON -- not this form's job to validate that */ }
+  });
+  return rooms;
+}
+
+async function submitProjectProposal() {
+  const submittedBy = document.getElementById('proposal-submitted-by').value.trim();
+  const statusEl = document.getElementById('proposal-status');
+  if (!submittedBy) {
+    statusEl.textContent = 'Your name/label is required.';
+    statusEl.style.color = '#c0392b';
+    return;
+  }
+
+  const projectId = document.getElementById('project-select').value || null;
+  let boundary = null;
+  const boundaryText = document.getElementById('plot-boundary').value.trim();
+  if (boundaryText) {
+    try { boundary = JSON.parse(boundaryText); }
+    catch (e) { statusEl.textContent = 'Boundary field has invalid JSON.'; statusEl.style.color = '#c0392b'; return; }
+  }
+  const facadeBearing = parseFloat(document.getElementById('facade-bearing').value);
+
+  const payload = {
+    submitted_by: submittedBy,
+    project_id: projectId ? parseInt(projectId, 10) : null,
+    proposed_boundary: boundary,
+    proposed_facade_bearing_deg: isNaN(facadeBearing) ? null : facadeBearing,
+    proposed_base_rooms: gatherCurrentRoomsForProposal(),
+    note: document.getElementById('proposal-note').value.trim() || null,
+  };
+  if (!projectId) {
+    payload.proposed_name = document.getElementById('proposal-project-name').value.trim();
+    payload.proposed_rera_reference = document.getElementById('proposal-rera').value.trim() || null;
+    payload.proposed_builder = document.getElementById('proposal-builder').value.trim() || null;
+    payload.proposed_address = document.getElementById('proposal-address').value.trim() || null;
+    if (!payload.proposed_name) {
+      statusEl.textContent = 'Project/building name is required for a new project.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+  }
+
+  const resp = await fetch('/projects/proposals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await resp.json();
+  if (!resp.ok) {
+    statusEl.textContent = body.detail || 'Submission failed.';
+    statusEl.style.color = '#c0392b';
+    return;
+  }
+  statusEl.textContent = `Submitted (proposal #${body.proposal_id}) — pending admin review.`;
+  statusEl.style.color = '#2e7d32';
+}
+
+document.getElementById('project-select').addEventListener('change', updateProjectDetail);
+document.getElementById('load-project-btn').addEventListener('click', loadSelectedProjectBasePlan);
+document.getElementById('propose-project-btn').addEventListener('click', toggleProposeForm);
+document.getElementById('submit-proposal-btn').addEventListener('click', submitProjectProposal);
 
 // ---------------------------------------------------------------------------
 // Floor plan tracing tool: a GUIDED, click-to-trace aid. No automatic wall or
@@ -1114,6 +1315,7 @@ document.getElementById('save-version-btn').addEventListener('click', saveVersio
 
 loadSchemaInfo();
 loadFlatsList();
+loadProjectsList();
 </script>
 
 </body>

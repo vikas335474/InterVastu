@@ -119,6 +119,158 @@ def test_delete_flat_returns_false_for_missing_flat(conn):
     assert storage.delete_flat(conn, 999) is False
 
 
+# ---------------------------------------------------------------------------
+# Projects: shared building-level data (submit -> approve/reject -> reuse)
+# ---------------------------------------------------------------------------
+
+SAMPLE_BOUNDARY = [[0, 0], [40, 0], [40, 30], [0, 30]]
+SAMPLE_BASE_ROOMS = [{"name": "Kitchen", "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]]}]
+
+
+def test_submit_new_project_proposal_requires_a_name(conn):
+    with pytest.raises(ValueError):
+        storage.submit_project_proposal(conn, "vikas", proposed_name=None)
+
+
+def test_submit_proposal_for_missing_project_raises(conn):
+    with pytest.raises(ValueError):
+        storage.submit_project_proposal(conn, "vikas", project_id=999, proposed_boundary=SAMPLE_BOUNDARY)
+
+
+def test_submitting_a_proposal_creates_no_project(conn):
+    storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers",
+        proposed_boundary=SAMPLE_BOUNDARY, proposed_facade_bearing_deg=5.0,
+    )
+    assert storage.list_projects(conn) == []  # nothing is live until approved
+
+
+def test_approve_new_project_proposal_creates_project_and_version_one(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers", proposed_rera_reference="RERA/MH/123",
+        proposed_boundary=SAMPLE_BOUNDARY, proposed_facade_bearing_deg=5.0,
+        proposed_base_rooms=SAMPLE_BASE_ROOMS, note="from RERA filing",
+    )
+    result = storage.approve_project_proposal(conn, proposal_id, reviewed_note="looks right")
+
+    assert result["version_number"] == 1
+    project = storage.get_project(conn, result["project_id"])
+    assert project["name"] == "Skyline Towers"
+    assert project["rera_reference"] == "RERA/MH/123"
+    assert len(project["versions"]) == 1
+    v1 = project["versions"][0]
+    assert v1["boundary"] == SAMPLE_BOUNDARY
+    assert v1["facade_bearing_deg"] == 5.0
+    assert v1["base_rooms"] == SAMPLE_BASE_ROOMS
+    assert v1["source_proposal_id"] == proposal_id
+
+    proposal = storage.get_project_proposal(conn, proposal_id)
+    assert proposal["status"] == "approved"
+    assert proposal["reviewed_note"] == "looks right"
+    assert proposal["reviewed_at"] is not None
+
+
+def test_approve_edit_proposal_adds_a_new_version_not_a_new_project(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers", proposed_boundary=SAMPLE_BOUNDARY,
+    )
+    created = storage.approve_project_proposal(conn, proposal_id)
+    project_id = created["project_id"]
+
+    edited_boundary = [[0, 0], [42, 0], [42, 30], [0, 30]]  # corrected width
+    edit_proposal_id = storage.submit_project_proposal(
+        conn, "resident_alice", project_id=project_id,
+        proposed_boundary=edited_boundary, note="corrected east wall measurement",
+    )
+    result = storage.approve_project_proposal(conn, edit_proposal_id)
+
+    assert result["project_id"] == project_id  # same project, not a new one
+    assert result["version_number"] == 2
+    project = storage.get_project(conn, project_id)
+    assert len(project["versions"]) == 2
+    assert project["versions"][1]["boundary"] == edited_boundary
+    # Original version is untouched -- editing never overwrites.
+    assert project["versions"][0]["boundary"] == SAMPLE_BOUNDARY
+
+
+def test_reject_proposal_keeps_the_record_but_creates_nothing(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Bad Data Towers", proposed_boundary=SAMPLE_BOUNDARY,
+    )
+    storage.reject_project_proposal(conn, proposal_id, reviewed_note="boundary looks wrong, please retrace")
+
+    assert storage.list_projects(conn) == []
+    proposal = storage.get_project_proposal(conn, proposal_id)
+    assert proposal["status"] == "rejected"
+    assert proposal["reviewed_note"] == "boundary looks wrong, please retrace"
+
+
+def test_cannot_approve_or_reject_an_already_decided_proposal(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers", proposed_boundary=SAMPLE_BOUNDARY,
+    )
+    storage.approve_project_proposal(conn, proposal_id)
+
+    with pytest.raises(ValueError):
+        storage.approve_project_proposal(conn, proposal_id)
+    with pytest.raises(ValueError):
+        storage.reject_project_proposal(conn, proposal_id)
+
+
+def test_approve_missing_proposal_raises(conn):
+    with pytest.raises(ValueError):
+        storage.approve_project_proposal(conn, 999)
+
+
+def test_reject_missing_proposal_raises(conn):
+    with pytest.raises(ValueError):
+        storage.reject_project_proposal(conn, 999)
+
+
+def test_list_project_proposals_filters_by_status(conn):
+    p1 = storage.submit_project_proposal(conn, "vikas", proposed_name="A", proposed_boundary=SAMPLE_BOUNDARY)
+    p2 = storage.submit_project_proposal(conn, "vikas", proposed_name="B", proposed_boundary=SAMPLE_BOUNDARY)
+    storage.approve_project_proposal(conn, p1)
+
+    pending = storage.list_project_proposals(conn, status="pending")
+    approved = storage.list_project_proposals(conn, status="approved")
+    everything = storage.list_project_proposals(conn)
+
+    assert [p["id"] for p in pending] == [p2]
+    assert [p["id"] for p in approved] == [p1]
+    assert len(everything) == 2
+
+
+def test_list_projects_uses_latest_version(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers",
+        proposed_boundary=SAMPLE_BOUNDARY, proposed_facade_bearing_deg=5.0,
+    )
+    created = storage.approve_project_proposal(conn, proposal_id)
+    edit_id = storage.submit_project_proposal(
+        conn, "vikas", project_id=created["project_id"],
+        proposed_boundary=SAMPLE_BOUNDARY, proposed_facade_bearing_deg=9.0,
+    )
+    storage.approve_project_proposal(conn, edit_id)
+
+    summaries = storage.list_projects(conn)
+    assert len(summaries) == 1
+    assert summaries[0]["latest_version"] == 2
+    assert summaries[0]["latest_facade_bearing_deg"] == 9.0
+
+
+def test_get_project_returns_none_for_missing_id(conn):
+    assert storage.get_project(conn, 999) is None
+
+
+def test_get_project_version_returns_none_for_missing_version(conn):
+    proposal_id = storage.submit_project_proposal(
+        conn, "vikas", proposed_name="Skyline Towers", proposed_boundary=SAMPLE_BOUNDARY,
+    )
+    created = storage.approve_project_proposal(conn, proposal_id)
+    assert storage.get_project_version(conn, created["project_id"], 5) is None
+
+
 def test_open_db_is_idempotent_on_existing_file(tmp_path):
     """Reopening the same file (e.g. server restart) must not error or wipe data."""
     db_path = tmp_path / "persist.db"

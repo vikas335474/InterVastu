@@ -247,3 +247,159 @@ def test_furniture_dimensions_override_is_honored(client):
     resp = client.post("/audit", json=layout)
     assert resp.status_code == 200
     assert "placements" in resp.json()["suggestions"][0]
+
+
+# ---------------------------------------------------------------------------
+# Projects: shared building-level data + the admin gate
+# ---------------------------------------------------------------------------
+
+SAMPLE_BOUNDARY = [[0, 0], [40, 0], [40, 30], [0, 30]]
+
+
+@pytest.fixture
+def admin_client(client, monkeypatch):
+    """Same client, with VASTU_ADMIN_TOKEN configured -- individual tests
+    still choose whether to send the matching header."""
+    monkeypatch.setenv("VASTU_ADMIN_TOKEN", "s3cret")
+    return client
+
+
+def test_submit_proposal_requires_submitted_by(client):
+    resp = client.post("/projects/proposals", json={"proposed_name": "Skyline Towers"})
+    assert resp.status_code == 400
+
+
+def test_submit_new_project_proposal_needs_no_admin_token(client):
+    resp = client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers",
+        "proposed_boundary": SAMPLE_BOUNDARY, "proposed_facade_bearing_deg": 5.0,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+
+def test_submitted_proposal_visible_by_id_without_admin_token(client):
+    proposal_id = client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers", "proposed_boundary": SAMPLE_BOUNDARY,
+    }).json()["proposal_id"]
+
+    resp = client.get(f"/projects/proposals/{proposal_id}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+
+def test_admin_endpoints_fail_closed_when_token_unconfigured(client, monkeypatch):
+    monkeypatch.delenv("VASTU_ADMIN_TOKEN", raising=False)
+    resp = client.get("/projects/proposals")
+    assert resp.status_code == 503
+
+
+def test_admin_endpoints_reject_wrong_token(admin_client):
+    resp = admin_client.get("/projects/proposals", headers={"X-Admin-Token": "wrong"})
+    assert resp.status_code == 403
+
+
+def test_admin_endpoints_reject_missing_token(admin_client):
+    resp = admin_client.get("/projects/proposals")
+    assert resp.status_code == 403
+
+
+def test_approving_new_project_proposal_requires_admin_token(client):
+    proposal_id = client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers", "proposed_boundary": SAMPLE_BOUNDARY,
+    }).json()["proposal_id"]
+
+    resp = client.post(f"/projects/proposals/{proposal_id}/approve", json={})
+    assert resp.status_code == 503  # no admin token configured at all in this test
+
+
+def test_full_project_lifecycle_submit_approve_list_and_reuse(admin_client):
+    submit = admin_client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers",
+        "proposed_rera_reference": "RERA/MH/123",
+        "proposed_boundary": SAMPLE_BOUNDARY, "proposed_facade_bearing_deg": 5.0,
+        "proposed_base_rooms": [{"name": "Kitchen", "polygon": [[0, 0], [8, 0], [8, 8], [0, 8]]}],
+        "note": "from the RERA-published layout",
+    })
+    proposal_id = submit.json()["proposal_id"]
+
+    # Not live yet -- nothing in the public project list.
+    assert admin_client.get("/projects").json() == []
+
+    approve = admin_client.post(
+        f"/projects/proposals/{proposal_id}/approve",
+        json={"reviewed_note": "matches the filing"},
+        headers={"X-Admin-Token": "s3cret"},
+    )
+    assert approve.status_code == 200
+    project_id = approve.json()["project_id"]
+    assert approve.json()["version_number"] == 1
+
+    # Now it's live and publicly browsable/reusable, no token required to read.
+    projects = admin_client.get("/projects").json()
+    assert len(projects) == 1
+    assert projects[0]["id"] == project_id
+    assert projects[0]["name"] == "Skyline Towers"
+
+    project = admin_client.get(f"/projects/{project_id}").json()
+    assert project["versions"][0]["boundary"] == SAMPLE_BOUNDARY
+    assert project["versions"][0]["source_proposal_id"] == proposal_id
+
+
+def test_edit_proposal_approval_adds_version_not_new_project(admin_client):
+    p1 = admin_client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers", "proposed_boundary": SAMPLE_BOUNDARY,
+    }).json()["proposal_id"]
+    project_id = admin_client.post(
+        f"/projects/proposals/{p1}/approve", json={}, headers={"X-Admin-Token": "s3cret"}
+    ).json()["project_id"]
+
+    corrected_boundary = [[0, 0], [42, 0], [42, 30], [0, 30]]
+    p2 = admin_client.post("/projects/proposals", json={
+        "submitted_by": "resident_alice", "project_id": project_id,
+        "proposed_boundary": corrected_boundary, "note": "measured east wall myself, it's 2ft wider",
+    }).json()["proposal_id"]
+    result = admin_client.post(
+        f"/projects/proposals/{p2}/approve", json={}, headers={"X-Admin-Token": "s3cret"}
+    ).json()
+    assert result["project_id"] == project_id
+    assert result["version_number"] == 2
+
+    projects = admin_client.get("/projects").json()
+    assert len(projects) == 1  # still one project, now on version 2
+
+
+def test_reject_proposal_with_admin_token(admin_client):
+    proposal_id = admin_client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Bad Data Towers", "proposed_boundary": SAMPLE_BOUNDARY,
+    }).json()["proposal_id"]
+
+    resp = admin_client.post(
+        f"/projects/proposals/{proposal_id}/reject",
+        json={"reviewed_note": "boundary doesn't match the filing, please retrace"},
+        headers={"X-Admin-Token": "s3cret"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "rejected"
+    assert admin_client.get("/projects").json() == []
+
+    proposal = admin_client.get(f"/projects/proposals/{proposal_id}").json()
+    assert proposal["status"] == "rejected"
+    assert "retrace" in proposal["reviewed_note"]
+
+
+def test_get_project_404_for_missing_id(client):
+    resp = client.get("/projects/999")
+    assert resp.status_code == 404
+
+
+def test_get_project_version_404_for_missing_version(admin_client):
+    proposal_id = admin_client.post("/projects/proposals", json={
+        "submitted_by": "vikas", "proposed_name": "Skyline Towers", "proposed_boundary": SAMPLE_BOUNDARY,
+    }).json()["proposal_id"]
+    project_id = admin_client.post(
+        f"/projects/proposals/{proposal_id}/approve", json={}, headers={"X-Admin-Token": "s3cret"}
+    ).json()["project_id"]
+
+    resp = admin_client.get(f"/projects/{project_id}/versions/99")
+    assert resp.status_code == 404
