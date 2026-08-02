@@ -115,6 +115,27 @@ Two additions on top of `zone_geometry.py`, both deterministic geometry only:
   `python3 genesis/engine/run_geometry.py` to see a pada-occupancy summary
   on the Unit 12 fixture, printed after the existing geometry/shape reports.
 
+### `pada_devata_45()` — EXPERIMENTAL 45-devata overlay (second, opt-in method)
+
+A second method, coexisting with `pada_grid()` rather than replacing it —
+calling it never changes `pada_grid()`'s own output. It reuses the exact
+same 9x9 grid and attaches a `"devata"` name to each cell for the classical
+"45-devata" scheme (32 peripheral + 13 core padas of the 81-pada grid).
+
+**Only 9 of the 81 cells are named**: the 4 corner + 4 side-midpoint border
+anchors and the inner 3x3 Brahmasthan, reusing this project's existing
+`ritual_protocol.DIRECTION_DEITIES` names. The other 72 cells are returned
+as `devata=None, needs_verification=True` rather than a guessed name —
+published Vastu texts disagree on the exact 32-border-name roster and the
+13-way interior grouping, and this module does not invent a resolution to
+that disagreement. An `overrides={(row, col): name}` parameter lets a
+caller fill in the rest after checking them against a primary source or a
+consultant; overrides are trusted as-is and can also correct a built-in
+anchor name. Every result carries a `disclaimer` field spelling this out —
+see `geometry_engine.py`'s "UNVERIFIED — READ BEFORE USING" block for the
+full reasoning. Run `python3 genesis/engine/run_geometry.py` to see it on
+the Unit 12 fixture, printed as its own clearly-labelled section.
+
 ## `genesis/engine/ritual_protocol.py` — OPTIONAL ritual/activation content
 
 An **opt-in, fully decoupled** layer that pairs a directional physical remedy

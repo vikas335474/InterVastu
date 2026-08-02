@@ -49,6 +49,7 @@ from typing import Any, Sequence
 
 from shapely.geometry import box
 
+from ritual_protocol import DIRECTION_DEITIES as _DIRECTION_DEITIES
 from zone_geometry import Coord, _to_polygon, compute_centre
 
 # ---------------------------------------------------------------------------
@@ -243,3 +244,132 @@ def pada_grid(
         "cell_size_ft": {"width": round(cell_w, 6), "height": round(cell_h, 6)},
         "cells": cells,
     }
+
+
+# ---------------------------------------------------------------------------
+# 45-devata overlay — SECOND, EXPERIMENTAL method, opt-in, coexists with
+# pada_grid() above rather than replacing it.
+# ---------------------------------------------------------------------------
+#
+# ============================================================================
+# UNVERIFIED — READ BEFORE USING
+# ============================================================================
+# The classical "45-devata" Vastu Purusha Mandala names 32 peripheral padas
+# plus 13 core padas of the 9x9 (81-pada) grid after individual deities. The
+# 9x9 grid's own border ring genuinely does have exactly 32 cells (an
+# objective fact of the geometry, not a claim about tradition), so that part
+# of the partition below is exact. The specific NAME assigned to each of
+# those 32 border cells, and the specific 13-way grouping of the 49 interior
+# cells, is NOT something this module has high-confidence, cross-checked
+# sourcing for — different published Vastu texts disagree on both the exact
+# roster and the exact positions, and guessing at the missing ones would be
+# exactly the kind of fabricated pseudo-precision this project has
+# deliberately refused elsewhere (see vastu_audit.py's scoring-assumption
+# notes and ritual_protocol.py's scope section).
+#
+# So this function only pre-fills the names this project already carries
+# with real (if still non-consultant-validated) sourcing: the 8 directional
+# lokapalas from ritual_protocol.DIRECTION_DEITIES, placed at the 4 corner
+# and 4 side-midpoint border cells, plus Brahma at the inner 3x3 core -
+# exactly the set ritual_protocol.py already uses at flat-level. The
+# remaining 24 border cells and 40 non-Brahma interior cells are returned
+# with `devata=None, "needs_verification"=True` rather than a guessed name.
+#
+# `overrides` lets a caller supply the rest after checking them against a
+# primary/classical source (or a consultant) - this function does not
+# validate override content in any way, it only merges it in by (row, col).
+# ============================================================================
+
+#: (row, col) -> octant/center key, for the 8 border anchors + Brahmasthan
+#: core, in this module's pada_grid() convention (row 0 = south edge, col 0
+#: = west edge, both increasing; order=9 => indices 0..8).
+_DEVATA_45_ANCHOR_CELLS: dict[tuple[int, int], str] = {
+    (8, 8): "NE",  # north edge (max row) + east edge (max col)
+    (0, 8): "SE",  # south edge (min row) + east edge
+    (0, 0): "SW",  # south edge + west edge (min col)
+    (8, 0): "NW",  # north edge + west edge
+    (8, 4): "N",   # north edge, middle column
+    (0, 4): "S",   # south edge, middle column
+    (4, 8): "E",   # east edge, middle row
+    (4, 0): "W",   # west edge, middle row
+}
+
+#: Inner 3x3 core (rows/cols 3..5 of a 9x9 grid) = the traditional
+#: Brahmasthan, matching zone_geometry's own default 1/9-area-fraction core
+#: region and ritual_protocol's "center" deity.
+_DEVATA_45_BRAHMA_CELLS: frozenset[tuple[int, int]] = frozenset(
+    (row, col) for row in range(3, 6) for col in range(3, 6)
+)
+
+#: Human-readable note attached to every pada_devata_45() result, so no
+#: caller can display the output without this travelling with it.
+DEVATA_45_DISCLAIMER: str = (
+    "Only 8 border anchor names (the corner/side-midpoint lokapalas) and "
+    "the inner 3x3 Brahmasthan are populated from this project's existing, "
+    "sourced deity references. The remaining border and interior pada names "
+    "are NOT populated - published Vastu texts disagree on the full 45-name "
+    "roster and this module does not guess. Verify any additional names "
+    "against a primary/classical source (or a consultant) before relying on "
+    "them, and supply them via the `overrides` parameter."
+)
+
+
+def pada_devata_45(
+    boundary: Sequence[Coord],
+    rooms: Sequence[tuple[str, Sequence[Coord]]],
+    north_offset_deg: float,
+    overrides: dict[tuple[int, int], str] | None = None,
+) -> dict[str, Any]:
+    """EXPERIMENTAL, opt-in 45-devata overlay on the 9x9 pada grid.
+
+    Coexists with :func:`pada_grid` - this does not replace it, and calling
+    this never changes what :func:`pada_grid` returns. Internally it simply
+    calls ``pada_grid(..., order=9)`` and attaches a ``"devata"`` name (or
+    ``None``) to each of the 81 cells. See the **UNVERIFIED** block above
+    this function for exactly which names are and are not populated, and
+    why. :data:`DEVATA_45_DISCLAIMER` is included in the return value for
+    the same reason.
+
+    Parameters
+    ----------
+    boundary, rooms, north_offset_deg
+        Same as :func:`pada_grid`.
+    overrides
+        Optional ``{(row, col): name}`` mapping to fill in additional pada
+        names after independent verification. Applied on top of this
+        module's built-in anchor names, so an override may also replace a
+        built-in name if a caller has reason to correct it. Not validated
+        against any source - this function trusts the caller entirely.
+
+    Returns
+    -------
+    dict
+        Same shape as :func:`pada_grid`'s return value, with each cell
+        additionally carrying:
+        ``{"devata": str | None, "needs_verification": bool}``, plus a
+        top-level ``"disclaimer"`` and ``"anchor_source"`` (naming where the
+        8 border anchors + Brahma came from) key.
+    """
+    result = pada_grid(boundary, rooms, north_offset_deg, order=9)
+    overrides = overrides or {}
+
+    for cell in result["cells"]:
+        key = (cell["row"], cell["col"])
+        if key in _DEVATA_45_BRAHMA_CELLS:
+            name = _DIRECTION_DEITIES["center"]["deity"]
+        elif key in _DEVATA_45_ANCHOR_CELLS:
+            name = _DIRECTION_DEITIES[_DEVATA_45_ANCHOR_CELLS[key]]["deity"]
+        else:
+            name = None
+        if key in overrides:
+            name = overrides[key]
+        cell["devata"] = name
+        cell["needs_verification"] = name is None
+
+    result["disclaimer"] = DEVATA_45_DISCLAIMER
+    result["anchor_source"] = (
+        "8 border anchors + Brahma reused from ritual_protocol.DIRECTION_DEITIES "
+        "(this project's existing, sourced-but-not-consultant-validated deity "
+        "references); all other pada names unpopulated pending user verification."
+    )
+    return result

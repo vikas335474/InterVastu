@@ -117,3 +117,70 @@ def test_pada_grid_rejects_nonpositive_order():
     boundary = [(0, 0), (1, 0), (1, 1), (0, 1)]
     with pytest.raises(ValueError):
         ge.pada_grid(boundary, rooms=[], north_offset_deg=0.0, order=0)
+
+
+# ---------------------------------------------------------------------------
+# pada_devata_45 — second, experimental method; must coexist with pada_grid
+# ---------------------------------------------------------------------------
+
+def _cell(result, row, col):
+    return next(c for c in result["cells"] if c["row"] == row and c["col"] == col)
+
+
+def test_pada_devata_45_does_not_change_pada_grid_output():
+    boundary = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    room = ("closet", [(0, 0), (1, 0), (1, 1), (0, 1)])
+
+    before = ge.pada_grid(boundary, rooms=[room], north_offset_deg=15.0)
+    ge.pada_devata_45(boundary, rooms=[room], north_offset_deg=15.0)
+    after = ge.pada_grid(boundary, rooms=[room], north_offset_deg=15.0)
+
+    assert before == after
+
+
+def test_pada_devata_45_places_corner_and_midpoint_anchors():
+    boundary = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    result = ge.pada_devata_45(boundary, rooms=[], north_offset_deg=0.0)
+
+    assert _cell(result, 8, 8)["devata"] == "Ishana (a form of Shiva)"  # NE corner
+    assert _cell(result, 0, 8)["devata"] == "Agni"  # SE corner
+    assert _cell(result, 0, 0)["devata"] == "Nirriti"  # SW corner
+    assert _cell(result, 8, 0)["devata"] == "Vayu"  # NW corner
+    assert _cell(result, 4, 4)["devata"] == "Brahma (Vastu Purusha at the Brahmasthan)"
+
+
+def test_pada_devata_45_leaves_unsourced_cells_unpopulated_and_flagged():
+    boundary = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    result = ge.pada_devata_45(boundary, rooms=[], north_offset_deg=0.0)
+
+    # (1, 1) is a border cell but not one of the 8 named anchors.
+    cell = _cell(result, 1, 1)
+    assert cell["devata"] is None
+    assert cell["needs_verification"] is True
+
+    # A named anchor must NOT be flagged as needing verification.
+    corner = _cell(result, 8, 8)
+    assert corner["needs_verification"] is False
+
+    assert "disclaimer" in result
+    assert result["disclaimer"] == ge.DEVATA_45_DISCLAIMER
+
+
+def test_pada_devata_45_overrides_apply_and_clear_verification_flag():
+    boundary = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    result = ge.pada_devata_45(
+        boundary, rooms=[], north_offset_deg=0.0,
+        overrides={(1, 1): "Parjanya"},
+    )
+    cell = _cell(result, 1, 1)
+    assert cell["devata"] == "Parjanya"
+    assert cell["needs_verification"] is False
+
+
+def test_pada_devata_45_override_can_replace_a_builtin_anchor():
+    boundary = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    result = ge.pada_devata_45(
+        boundary, rooms=[], north_offset_deg=0.0,
+        overrides={(8, 8): "Custom Ishana Spelling"},
+    )
+    assert _cell(result, 8, 8)["devata"] == "Custom Ishana Spelling"

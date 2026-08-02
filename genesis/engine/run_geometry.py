@@ -158,6 +158,31 @@ def print_pada_grid_report(pada_grid_result):
     print()
 
 
+def print_devata_45_report(devata_result):
+    """Summarise geometry_engine.pada_devata_45()'s per-cell output.
+
+    EXPERIMENTAL, opt-in second method - see geometry_engine.py's
+    UNVERIFIED block for exactly which names are sourced vs. unpopulated.
+    Printed as its own clearly-labelled section, separate from the
+    pada_grid() report above, so the two never get confused for each other.
+    """
+    print("=" * 78)
+    print("45-DEVATA OVERLAY  (geometry_engine.pada_devata_45) -- EXPERIMENTAL")
+    print("=" * 78)
+    print(devata_result["disclaimer"])
+    print()
+    named = [c for c in devata_result["cells"] if c["devata"] is not None]
+    unverified = [c for c in devata_result["cells"] if c["needs_verification"]]
+    print(f"named cells: {len(named)} of {len(devata_result['cells'])} "
+          f"({len(unverified)} still need_verification)")
+    for cell in named:
+        rooms_str = ", ".join(
+            f"{name}={frac:.0%}" for name, frac in cell["room_occupancy"].items()
+        ) or "(no room in this pada)"
+        print(f"  pada[row={cell['row']:>2}, col={cell['col']:>2}] {cell['devata']:<45} {rooms_str}")
+    print()
+
+
 def print_audit_report(audit_result):
     print("=" * 78)
     print("AUDIT  (vastu_audit.audit_layout)")
@@ -212,6 +237,13 @@ def main():
         north_offset_deg=fixture["north_offset_deg"],
     )
     print_pada_grid_report(pada_grid_result)
+
+    devata_result = ge.pada_devata_45(
+        fixture["boundary"],
+        rooms=[(r["name"], r["polygon"]) for r in fixture["rooms"]],
+        north_offset_deg=fixture["north_offset_deg"],
+    )
+    print_devata_45_report(devata_result)
 
     schema = load_schema(SCHEMA_PATH)
     audit_input = build_audit_input(geometry_result)
