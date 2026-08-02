@@ -28,6 +28,7 @@ sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(UI_DIR))
 
 from vastu_audit import load_schema, audit_layout  # noqa: E402
+import zone_geometry as zg  # noqa: E402
 import storage  # noqa: E402
 import suggestions  # noqa: E402
 
@@ -70,17 +71,35 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     rooms = payload.get("rooms", [])
     facade_bearing_deg = payload.get("facade_bearing_deg", 0.0) or 0.0
     furniture_dimensions = payload.get("furniture_dimensions")
+    boundary = payload.get("boundary")
 
-    # Persist facade_bearing_deg/furniture_dimensions alongside plot/rooms so
-    # a saved flat round-trips through storage with its suggestion inputs
-    # intact, not just its audit inputs.
+    # Persist facade_bearing_deg/furniture_dimensions/boundary alongside
+    # plot/rooms so a saved flat round-trips through storage with its
+    # suggestion + shape-diagnosis inputs intact, not just its audit inputs.
     input_data = {
         "plot": payload.get("plot", {}),
         "rooms": rooms,
         "facade_bearing_deg": facade_bearing_deg,
         "furniture_dimensions": furniture_dimensions,
+        "boundary": boundary,
     }
-    result = audit_layout(input_data, SCHEMA)
+
+    # Footprint-level shape diagnosis (hollow-centre + missing-zone) only runs
+    # when the caller supplies a "boundary" polygon; when it's absent the audit
+    # is exactly as before (no shape_defect_* keys). facade_bearing_deg is the
+    # plan's north offset, in the same convention diagnose_shape expects.
+    shape_diagnosis = None
+    if boundary:
+        try:
+            shape_diagnosis = zg.diagnose_shape(boundary, north_offset_deg=facade_bearing_deg)
+        except (ValueError, TypeError):
+            # A malformed boundary must not take down the whole audit; the rest
+            # of the report (zone/adjacency/suggestions) is still valid.
+            shape_diagnosis = None
+
+    result = audit_layout(input_data, SCHEMA, shape_diagnosis=shape_diagnosis)
+    if shape_diagnosis is not None:
+        result["shape_diagnosis"] = shape_diagnosis
     result["suggestions"] = suggestions.suggest_for_layout(
         rooms, facade_bearing_deg=facade_bearing_deg, furniture_dimensions=furniture_dimensions
     )
