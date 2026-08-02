@@ -29,6 +29,7 @@ sys.path.insert(0, str(UI_DIR))
 
 from vastu_audit import load_schema, audit_layout  # noqa: E402
 import storage  # noqa: E402
+import suggestions  # noqa: E402
 
 SCHEMA_PATH = ENGINE_DIR / "vastu_rule_schema.json"
 SCHEMA = load_schema(SCHEMA_PATH)
@@ -55,9 +56,34 @@ def get_conn():
 
 
 def _run_audit(payload: dict) -> tuple[dict, dict]:
-    """Build the {"plot", "rooms"} input the engine expects and audit it."""
-    input_data = {"plot": payload.get("plot", {}), "rooms": payload.get("rooms", [])}
+    """Build the {"plot", "rooms"} input the engine expects, audit it, and
+    attach constructive placement suggestions (suggestions.py) for any room
+    that both supplied a "polygon" and has a supported room type (see
+    suggestions.py — most room types have no placement solver at all, that's
+    not an error, those rooms just get no "suggestions" entry).
+
+    facade_bearing_deg / furniture_dimensions are optional top-level payload
+    keys; see suggestions.suggest_for_layout for their meaning and defaults.
+    Rooms without a "polygon" key are unaffected — they still get the usual
+    zone/adjacency audit, just no placement suggestion.
+    """
+    rooms = payload.get("rooms", [])
+    facade_bearing_deg = payload.get("facade_bearing_deg", 0.0) or 0.0
+    furniture_dimensions = payload.get("furniture_dimensions")
+
+    # Persist facade_bearing_deg/furniture_dimensions alongside plot/rooms so
+    # a saved flat round-trips through storage with its suggestion inputs
+    # intact, not just its audit inputs.
+    input_data = {
+        "plot": payload.get("plot", {}),
+        "rooms": rooms,
+        "facade_bearing_deg": facade_bearing_deg,
+        "furniture_dimensions": furniture_dimensions,
+    }
     result = audit_layout(input_data, SCHEMA)
+    result["suggestions"] = suggestions.suggest_for_layout(
+        rooms, facade_bearing_deg=facade_bearing_deg, furniture_dimensions=furniture_dimensions
+    )
     return input_data, result
 
 
@@ -97,8 +123,10 @@ def schema_info():
 @app.post("/audit")
 def audit(layout: dict):
     """Stateless one-off audit — nothing is saved. Kept for quick checks
-    that don't belong to a named flat."""
-    return audit_layout(layout, SCHEMA)
+    that don't belong to a named flat. Includes placement suggestions (see
+    _run_audit) for any room that supplied a polygon and a supported type."""
+    _, result = _run_audit(layout)
+    return result
 
 
 # ---------------------------------------------------------------------------
