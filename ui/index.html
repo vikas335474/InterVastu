@@ -291,7 +291,8 @@ function renderResults(result) {
     html += `<p class="muted">Geometric suggestions from the furniture-placement solver, for rooms where a polygon was entered. Position/rotation are in the room's own local feet coordinates.</p>`;
     result.suggestions.forEach(s => {
       if (s.suggestion_error) {
-        html += `<div class="suggestion-error"><strong>${s.room}</strong>: ${s.suggestion_error}</div>`;
+        const label = s.error_type === 'invalid_geometry' ? 'Invalid polygon' : 'No placement found';
+        html += `<div class="suggestion-error"><strong>${s.room}</strong> — ${label}: ${s.suggestion_error}</div>`;
         return;
       }
       (s.placements || []).forEach(p => {

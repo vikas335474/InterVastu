@@ -3,8 +3,13 @@
 Covers: a supported room type with a good placement (no compromise), a
 room type outside solver.py's scope (silently skipped, not an error), a
 missing polygon (silently skipped), a genuine physical-fit failure turned
-into a structured suggestion_error instead of a raised exception, and a
-furniture_dimensions override taking priority over the module default.
+into a structured suggestion_error instead of a raised exception, a
+furniture_dimensions override taking priority over the module default, and
+malformed/wire-garbage polygon input (wrong type, wrong arity, non-numeric
+coordinates) -- these must never raise, and must be distinguishable
+(error_type="invalid_geometry") from a genuine physical-fit failure
+(error_type="solver_error"), since suggest_for_room has no schema-validated
+caller and must assume arbitrary JSON can arrive here.
 """
 
 import pytest
@@ -48,7 +53,65 @@ def test_suggest_for_room_physical_impossibility_is_structured_error_not_excepti
     result = sug.suggest_for_room("MasterBedroom", tiny_room)
     assert result["room"] == "MasterBedroom"
     assert "suggestion_error" in result
+    assert result["error_type"] == "solver_error"
     assert "placements" not in result
+
+
+# ---------------------------------------------------------------------------
+# Malformed / wire-garbage polygon input -- must never raise, and must be
+# distinguishable from a genuine physical-fit failure.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "bad_polygon",
+    [
+        None,
+        123,
+        "not a polygon",
+        [],
+        [(0, 0)],
+        [(0, 0), (1, 1)],  # only 2 vertices
+        [(0, 0), (1, 0), "not a coord"],
+        [(0, 0), (1, 0), (1,)],  # wrong arity
+        [(0, 0), (1, 0), ("x", "y")],  # non-numeric coordinates
+        [(0, 0), (1, 0), (1, 1), (0, 1), None],
+    ],
+)
+def test_suggest_for_room_malformed_polygon_never_raises(bad_polygon):
+    result = sug.suggest_for_room("MasterBedroom", bad_polygon)
+    assert result["room"] == "MasterBedroom"
+    assert "suggestion_error" in result
+    assert result["error_type"] == "invalid_geometry"
+    assert "placements" not in result
+
+
+def test_suggest_for_room_malformed_polygon_is_distinguishable_from_solver_error():
+    """invalid_geometry (structurally bad input) and solver_error (a
+    well-formed room that's genuinely too small) must not be conflated --
+    a caller needs to tell "you sent garbage" apart from "this room design
+    won't fit a bed"."""
+    garbage = sug.suggest_for_room("MasterBedroom", "garbage")
+    too_small = sug.suggest_for_room("MasterBedroom", [(0, 0), (2, 0), (2, 2), (0, 2)])
+    assert garbage["error_type"] == "invalid_geometry"
+    assert too_small["error_type"] == "solver_error"
+    assert garbage["error_type"] != too_small["error_type"]
+
+
+def test_suggest_for_layout_one_malformed_room_does_not_break_other_rooms():
+    """The core regression this fix targets: one bad polygon must not take
+    down suggestions (or the whole audit response) for every other room."""
+    rooms = [
+        {"name": "MasterBedroom", "polygon": "not a valid polygon"},
+        {"name": "Kitchen", "polygon": [(0, 0), (10, 0), (10, 8), (0, 8)]},
+    ]
+    results = sug.suggest_for_layout(rooms)
+    assert len(results) == 2
+
+    bad = next(r for r in results if r["room"] == "MasterBedroom")
+    good = next(r for r in results if r["room"] == "Kitchen")
+    assert bad["error_type"] == "invalid_geometry"
+    assert "placements" in good
+    assert good["placements"][0]["object"] == "stove"
 
 
 def test_suggest_for_room_furniture_dimensions_override_takes_priority():

@@ -10,11 +10,13 @@ This module invents NO new placement logic of its own. It only:
   - supplies documented DEFAULT furniture footprints when the caller doesn't
     pass its own (see DEFAULT_FURNITURE_DIMENSIONS — these are placeholders,
     not validated against any real furniture catalog or architect review);
-  - turns solver.py's ValueError ("this furniture item does not physically
-    fit in this room") into a structured, non-crashing "suggestion_error"
-    entry instead of letting it propagate, since a caller's request for an
-    audit should never fail just because one room happens to be too small
-    for the default bed size.
+  - turns any failure — solver.py's ValueError ("this furniture item does
+    not physically fit in this room"), or malformed input arriving straight
+    off the wire (wrong type, wrong arity, non-numeric coordinates — this
+    module has no schema-validated caller, so garbage input must be assumed
+    possible) — into a structured, non-crashing "suggestion_error" entry
+    for that ONE room, instead of letting an exception propagate and take
+    down the entire audit response for every other room in the request.
 
 A room only gets a suggestion if the caller supplies its polygon (a
 suggestion is inherently geometric — there is no way to place a bed against
@@ -28,6 +30,37 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 import solver
+
+#: Raised by _validate_polygon for structurally invalid input. Caught
+#: separately from solver failures so the two are never confused: a
+#: malformed polygon from the wire is not the same problem as a real,
+#: well-formed room that's simply too small for the furniture.
+class _InvalidPolygonError(ValueError):
+    pass
+
+
+def _validate_polygon(polygon: Any) -> None:
+    """Raise _InvalidPolygonError if `polygon` isn't a plausible list of
+    (x, y) coordinate pairs. Called BEFORE handing off to solver.py, since
+    this module has no upstream schema validation — a caller (e.g. a raw
+    HTTP POST body) can send anything as "polygon", and Shapely's own
+    errors for garbage input (TypeError for a non-sequence, ValueError with
+    a geometry-internals message for too-few-points) are not reliably
+    distinguishable from solver.py's "doesn't fit" ValueError without this
+    check running first.
+    """
+    if not isinstance(polygon, (list, tuple)):
+        raise _InvalidPolygonError(
+            f"polygon must be a list of [x, y] pairs, got {type(polygon).__name__}"
+        )
+    if len(polygon) < 3:
+        raise _InvalidPolygonError(f"polygon must have at least 3 vertices, got {len(polygon)}")
+    for i, vertex in enumerate(polygon):
+        if not isinstance(vertex, (list, tuple)) or len(vertex) != 2:
+            raise _InvalidPolygonError(f"polygon vertex {i} must be an [x, y] pair, got {vertex!r}")
+        x, y = vertex
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+            raise _InvalidPolygonError(f"polygon vertex {i} coordinates must be numbers, got {vertex!r}")
 
 Coord = tuple[float, float]
 
@@ -56,28 +89,53 @@ def suggest_for_room(
 
     Return shape on success: {"room": ..., "placements": [...]} — the exact
     list solver.py's solve_* functions return, unmodified.
-    Return shape on a real solver failure (furniture doesn't physically
-    fit): {"room": ..., "suggestion_error": "<message>"}.
+    Return shape on ANY failure — malformed polygon, missing dimensions, or
+    a real solver failure (furniture doesn't physically fit) — is always:
+    {"room": ..., "suggestion_error": "<message>", "error_type": "..."}.
+    This function never raises for room-type-supported, malformed-input
+    cases; it always returns a structured record so one bad room can never
+    take down the response for every other room in the request (see
+    suggest_for_layout, which relies on that guarantee).
     """
+    if room_name not in _BED_ROOMS and room_name not in ("Kitchen", "LivingRoom"):
+        return None  # out of solver.py's scope; not an error
+
+    try:
+        _validate_polygon(polygon)
+    except _InvalidPolygonError as exc:
+        return {"room": room_name, "suggestion_error": str(exc), "error_type": "invalid_geometry"}
+
     overrides = furniture_dimensions or {}
 
     try:
         if room_name in _BED_ROOMS:
             dims = overrides.get(room_name) or DEFAULT_FURNITURE_DIMENSIONS.get(room_name)
             if dims is None:
-                return {"room": room_name, "suggestion_error": "no bed dimensions available"}
+                return {
+                    "room": room_name,
+                    "suggestion_error": "no bed dimensions available",
+                    "error_type": "missing_dimensions",
+                }
             placements = solver.solve_bed_placement(polygon, tuple(dims), room_name, facade_bearing_deg)
         elif room_name == "Kitchen":
             dims = overrides.get(room_name) or DEFAULT_FURNITURE_DIMENSIONS.get(room_name)
             if dims is None:
-                return {"room": room_name, "suggestion_error": "no stove dimensions available"}
+                return {
+                    "room": room_name,
+                    "suggestion_error": "no stove dimensions available",
+                    "error_type": "missing_dimensions",
+                }
             placements = solver.solve_stove_placement(polygon, tuple(dims), facade_bearing_deg)
-        elif room_name == "LivingRoom":
+        else:  # LivingRoom
             placements = solver.solve_living_room_layout(polygon, facade_bearing_deg)
-        else:
-            return None  # out of solver.py's scope; not an error
-    except ValueError as exc:
-        return {"room": room_name, "suggestion_error": str(exc)}
+    except (ValueError, TypeError) as exc:
+        # Covers solver.py's genuine "doesn't physically fit" ValueError,
+        # plus anything else a malformed-but-past-_validate_polygon input
+        # (e.g. non-numeric furniture_dimensions override) could trigger
+        # deeper in Shapely. Deliberately broad: any exception type from
+        # this call must become a structured per-room error, never an
+        # uncaught propagation that would take the whole request down.
+        return {"room": room_name, "suggestion_error": str(exc), "error_type": "solver_error"}
 
     return {"room": room_name, "placements": placements}
 

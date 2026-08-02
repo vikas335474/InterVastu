@@ -193,7 +193,49 @@ def test_suggestion_error_for_room_too_small_is_not_a_500(client):
     }
     resp = client.post("/audit", json=layout)
     assert resp.status_code == 200
-    assert "suggestion_error" in resp.json()["suggestions"][0]
+    assert resp.json()["suggestions"][0]["error_type"] == "solver_error"
+
+
+@pytest.mark.parametrize(
+    "bad_polygon",
+    [
+        "not a polygon",
+        123,
+        [[0, 0], [1, 1]],  # only 2 vertices
+        [[0, 0], [1, 0], ["x", "y"]],  # non-numeric coordinates
+    ],
+)
+def test_malformed_polygon_over_http_is_not_a_500(client, bad_polygon):
+    """The blocking fix this covers: a malformed polygon arriving straight
+    off the wire (not just clean Python-side fixtures) must never 500 the
+    whole /audit response -- it must come back as a structured per-room
+    suggestion_error, same status code as a clean request."""
+    layout = {
+        "plot": {},
+        "rooms": [{"name": "MasterBedroom", "zone": "SW", "polygon": bad_polygon}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suggestions"][0]["error_type"] == "invalid_geometry"
+    # The rest of the zone/adjacency audit still ran normally -- one bad
+    # polygon doesn't take the whole response down.
+    assert "compliance_score" in body
+
+
+def test_malformed_polygon_in_one_room_does_not_break_other_rooms_over_http(client):
+    layout = {
+        "plot": {},
+        "rooms": [
+            {"name": "MasterBedroom", "zone": "SW", "polygon": "garbage"},
+            {"name": "Kitchen", "zone": "SE", "polygon": [[0, 0], [10, 0], [10, 8], [0, 8]]},
+        ],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    suggestions_by_room = {s["room"]: s for s in resp.json()["suggestions"]}
+    assert suggestions_by_room["MasterBedroom"]["error_type"] == "invalid_geometry"
+    assert "placements" in suggestions_by_room["Kitchen"]
 
 
 def test_furniture_dimensions_override_is_honored(client):

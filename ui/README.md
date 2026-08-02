@@ -84,10 +84,18 @@ neither file adds any new placement logic of its own.
   all return a `"suggestions"` list alongside the usual audit fields. Each
   entry is either `{"room", "placements": [...]}` (solver.py's own output,
   unmodified — position, rotation, `satisfies_rule`, `compromise`,
-  `compromise_note`) or `{"room", "suggestion_error": "..."}` when the
-  furniture genuinely does not fit anywhere in the room (a real geometric
-  failure, not a Vastu compromise — see `solver.py`'s docstring). This never
-  turns into a 500; a too-small room is reported, not crashed on.
+  `compromise_note`) or `{"room", "suggestion_error": "...", "error_type":
+  "..."}`. Two distinct failure modes are deliberately NOT conflated:
+  `error_type: "invalid_geometry"` means the polygon itself is malformed
+  (wrong type, too few vertices, non-numeric coordinates — this endpoint has
+  no upstream schema validation, so garbage input off the wire must be
+  assumed possible, not just clean requests from this page's own JS);
+  `error_type: "solver_error"` means the polygon is well-formed but the
+  furniture genuinely does not fit anywhere in that room (a real geometric
+  failure, not a Vastu compromise — see `solver.py`'s docstring). Either
+  way this is a per-room error, never a 500 — one malformed or too-small
+  room does not take down the zone/adjacency audit or any other room's
+  suggestion in the same request (`genesis/engine/suggestions.py`).
 - `facade_bearing_deg` and any `furniture_dimensions` overrides are saved
   as part of a flat's version input, so reloading a saved flat restores its
   polygons and suggestion settings exactly as entered.
