@@ -330,6 +330,179 @@ def audit_brahmasthan(
     return scored_violations, informational_notes
 
 
+# -------------------------------------------------------------------------
+# SHAPE-DEFECT CHECK — bridges zone_geometry.diagnose_shape() output into
+# scored/informational audit output. Additive, exactly like audit_brahmasthan:
+# audit_layout only runs it when a shape_diagnosis is supplied (default None),
+# so existing callers are unaffected.
+# -------------------------------------------------------------------------
+
+# --- ASSUMPTION (not in the schema): which missing octants count as a scored
+# --- defect, and at what severity. The traditional "missing-zone" remedies
+# --- are written for the four ORDINAL directions (the Vastu Purusha's head =
+# --- NE, feet = SW, arms = SE/NW); NE and SW are the two most consistently
+# --- flagged as serious across sources (the sacred head and the grounding
+# --- feet), mirroring the same NE/SW "major" pattern already in the schema's
+# --- room_constraints. Cardinal cuts (N/E/S/W) have far weaker source
+# --- consensus and no remedy in the traditional matrix, so they are surfaced
+# --- as informational notes rather than scored. This whole map is a
+# --- placeholder pending the same licensed-consultant sign-off as the rest of
+# --- the schema (see the DATA SOURCE NOTE at the top of this file); it is
+# --- exposed as a parameter so it can be replaced without a code change.
+DEFAULT_MISSING_ZONE_SEVERITY = {
+    "NE": "major",
+    "SW": "major",
+    "SE": "minor",
+    "NW": "minor",
+}
+
+# --- Traditional (folk) remedies for footprint-shape defects. These are
+# --- adapted from widely-repeated Vastu remediation guidance and are phrased
+# --- as TRADITIONAL PRACTICES, not cures — same legal/epistemic footing as
+# --- the schema's own remedy text (see known_gaps: remedy language needs
+# --- legal review before a paid product ships). Structural correction is the
+# --- only complete fix for a shape defect; everything here is mitigation.
+SHAPE_DEFECT_REMEDIES = {
+    "hollow_center": (
+        "The flat's true centre (Brahmasthan) falls in open space outside the "
+        "built footprint — traditionally one of the most serious plan defects, "
+        "and one no cosmetic remedy fully resolves. Traditional mitigations "
+        "only: treat the nearest interior point to the missing centre as a "
+        "symbolic centre (kept clear, light, and uncluttered), and use mirrors "
+        "on the interior walls that face the open/missing area. Full "
+        "correction is structural (enclosing the footprint), not decorative — "
+        "the product should not claim otherwise."
+    ),
+    "high_center_offset": (
+        "The flat's true centre of mass sits well away from its bounding-box "
+        "centre — a strongly irregular (e.g. pronounced L-/T-shaped) footprint. "
+        "This is not itself a defect, but it means the real Brahmasthan is not "
+        "where a plan's visual middle suggests; any central-zone checks should "
+        "be read against the true centroid, which the geometry layer already "
+        "uses."
+    ),
+    "missing_zone": {
+        "NE": (
+            "Traditional remedy for a missing/cut NE (the 'head' zone): keep "
+            "the existing NE-most corner light and water-associated — e.g. a "
+            "small water feature or a blue/crystal bowl — and use an "
+            "outward-facing mirror on the cut wall to symbolically extend the "
+            "space. Mitigation only; a cut NE is widely considered a serious "
+            "defect that only structural correction fully addresses."
+        ),
+        "SW": (
+            "Traditional remedy for a missing/cut SW (the 'feet' zone): weight "
+            "and ground the remaining SW portion with the heaviest furniture "
+            "and earthy colours/materials. A cut SW is traditionally treated "
+            "as serious (loss of stability); this is mitigation, not a cure."
+        ),
+        "SE": (
+            "Traditional remedy for a missing/cut SE (a 'fire'/Agni zone): "
+            "strengthen the remaining SE with warm (red/orange) accents and "
+            "keep water features out of it. Mitigation only."
+        ),
+        "NW": (
+            "Traditional remedy for a missing/cut NW (an 'air' zone): favour "
+            "ventilation and light (white/grey/light-green) treatment of the "
+            "remaining NW area. Mitigation only."
+        ),
+        "default": (
+            "This direction has been cut from the footprint. Traditional "
+            "guidance for a missing zone is symbolic extension (mirror on the "
+            "cut wall) plus direction-appropriate colour/element treatment of "
+            "the remaining area; structural correction is the only complete "
+            "fix."
+        ),
+    },
+}
+
+
+def audit_shape_defects(
+    shape_diagnosis,
+    missing_zone_severity=None,
+):
+    """
+    Turn zone_geometry.diagnose_shape()'s output into audit output.
+
+    shape_diagnosis: the dict returned by zone_geometry.diagnose_shape().
+        Only these keys are read: "hollow_center" (bool), "centroid" (for the
+        violation text), "high_center_offset" (bool), "center_offset_fraction"
+        (float), and "missing_zones" (list of {"octant", "zones",
+        "area_ft2", "area_fraction"}).
+    missing_zone_severity: mapping octant -> "major"/"minor" for which cut
+        octants are scored and how. Defaults to DEFAULT_MISSING_ZONE_SEVERITY.
+        An octant absent from the map (e.g. a cardinal cut) is surfaced as an
+        informational note, never scored.
+
+    Returns (scored_violations, informational_notes) — two lists, kept
+    separate exactly like audit_brahmasthan:
+        - scored_violations: rule_type in
+          {"hollow_center", "missing_zone"}, with a severity.
+        - informational_notes: rule_type in
+          {"center_offset_info", "missing_zone_info"}, severity=None — visible
+          for human review, never scored.
+    """
+    if missing_zone_severity is None:
+        missing_zone_severity = DEFAULT_MISSING_ZONE_SEVERITY
+
+    scored_violations = []
+    informational_notes = []
+
+    centroid = shape_diagnosis.get("centroid", {})
+
+    if shape_diagnosis.get("hollow_center"):
+        scored_violations.append({
+            "rule_type": "hollow_center",
+            "violation": (
+                f"flat centre ({centroid.get('x')}, {centroid.get('y')}) falls "
+                f"outside the built footprint (hollow/external Brahmasthan)"
+            ),
+            "severity": "major",
+            "remedy": SHAPE_DEFECT_REMEDIES["hollow_center"],
+        })
+    elif shape_diagnosis.get("high_center_offset"):
+        # Only reported when NOT hollow — a hollow centre already subsumes and
+        # outranks a large offset, so we don't emit both for the same flat.
+        informational_notes.append({
+            "rule_type": "center_offset_info",
+            "message": (
+                f"Flat centre of mass sits {shape_diagnosis.get('center_offset_fraction')} "
+                f"of the bounding-box diagonal from the bounding-box centre "
+                f"(strongly irregular footprint)."
+            ),
+            "severity": None,
+            "remedy": SHAPE_DEFECT_REMEDIES["high_center_offset"],
+        })
+
+    for mz in shape_diagnosis.get("missing_zones", []):
+        octant = mz.get("octant")
+        fraction = mz.get("area_fraction") or 0.0
+        severity = missing_zone_severity.get(octant)
+        if severity is None:
+            informational_notes.append({
+                "rule_type": "missing_zone_info",
+                "message": (
+                    f"{octant} zone is cut from the footprint "
+                    f"({fraction:.0%} of the bounding box); not scored as a "
+                    f"defect for this direction (weak source consensus, no "
+                    f"traditional remedy indexed for cardinal cuts)."
+                ),
+                "severity": None,
+            })
+            continue
+        remedy = SHAPE_DEFECT_REMEDIES["missing_zone"].get(
+            octant, SHAPE_DEFECT_REMEDIES["missing_zone"]["default"]
+        )
+        scored_violations.append({
+            "rule_type": "missing_zone",
+            "violation": f"{octant} zone cut from footprint ({fraction:.0%} of bounding box)",
+            "severity": severity,
+            "remedy": remedy,
+        })
+
+    return scored_violations, informational_notes
+
+
 def compute_score(scored_violations, base=BASE_SCORE):
     """
     scored_violations: list of violation dicts that have a non-None 'severity'.
@@ -348,6 +521,8 @@ def audit_layout(
     geometry_results=None,
     brahmasthan_obstructing_types=None,
     brahmasthan_overlap_threshold=DEFAULT_BRAHMASTHAN_OVERLAP_THRESHOLD,
+    shape_diagnosis=None,
+    missing_zone_severity=None,
 ):
     """
     input_data: dict with keys:
@@ -362,6 +537,13 @@ def audit_layout(
     brahmasthan_obstructing_types / brahmasthan_overlap_threshold: passed
         through to audit_brahmasthan() when geometry_results is provided;
         see that function's docstring.
+    shape_diagnosis: OPTIONAL. The dict from zone_geometry.diagnose_shape().
+        When provided, audit_shape_defects() is run and its output is merged
+        in (hollow-centre + missing-zone checks). When omitted (the default),
+        behaviour is IDENTICAL to before this parameter existed — no shape_*
+        keys are added, existing callers are unaffected.
+    missing_zone_severity: passed through to audit_shape_defects() when
+        shape_diagnosis is provided; see that function's docstring.
 
     Returns a result dict:
         {
@@ -375,6 +557,9 @@ def audit_layout(
           # only present when geometry_results is provided:
           "brahmasthan_violations": [ ... ],  # scored, rule_type=brahmasthan_obstruction
           "brahmasthan_notes": [ ... ],       # informational, never scored
+          # only present when shape_diagnosis is provided:
+          "shape_defect_violations": [ ... ], # scored, rule_type in {hollow_center, missing_zone}
+          "shape_defect_notes": [ ... ],      # informational, never scored
         }
     """
     room_results = []
@@ -419,6 +604,15 @@ def audit_layout(
         scored_violations.extend(brahmasthan_violations)
         result["brahmasthan_violations"] = brahmasthan_violations
         result["brahmasthan_notes"] = brahmasthan_notes
+
+    if shape_diagnosis is not None:
+        shape_violations, shape_notes = audit_shape_defects(
+            shape_diagnosis,
+            missing_zone_severity=missing_zone_severity,
+        )
+        scored_violations.extend(shape_violations)
+        result["shape_defect_violations"] = shape_violations
+        result["shape_defect_notes"] = shape_notes
 
     result["compliance_score"] = compute_score(scored_violations)
     result["total_scored_violations"] = len(scored_violations)

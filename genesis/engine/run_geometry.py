@@ -106,6 +106,30 @@ def build_brahmasthan_input(geometry_result):
     ]
 
 
+def print_shape_report(shape_diagnosis):
+    print("=" * 78)
+    print("SHAPE DIAGNOSIS  (zone_geometry.diagnose_shape)")
+    print("=" * 78)
+    c = shape_diagnosis["centroid"]
+    b = shape_diagnosis["bbox_center"]
+    print(f"centroid:     x={c['x']:.3f}  y={c['y']:.3f}   (true Brahmasthan)")
+    print(f"bbox_center:  x={b['x']:.3f}  y={b['y']:.3f}")
+    print(f"center_offset: {shape_diagnosis['center_offset_ft']:.3f} ft "
+          f"({shape_diagnosis['center_offset_fraction']:.1%} of bbox diagonal)  "
+          f"high_offset={shape_diagnosis['high_center_offset']}")
+    print(f"centroid_inside_boundary={shape_diagnosis['centroid_inside_boundary']}  "
+          f"HOLLOW_CENTER={shape_diagnosis['hollow_center']}")
+    print(f"footprint_fill={shape_diagnosis['footprint_fill_fraction']:.1%} of bounding box")
+    if shape_diagnosis["missing_zones"]:
+        print("missing/cut zones:")
+        for mz in shape_diagnosis["missing_zones"]:
+            print(f"  {mz['octant']:<3} ({'/'.join(mz['zones'])}): "
+                  f"{mz['area_ft2']:.1f} ft2 ({mz['area_fraction']:.1%} of bbox)")
+    else:
+        print("missing/cut zones: (none above threshold)")
+    print()
+
+
 def print_audit_report(audit_result):
     print("=" * 78)
     print("AUDIT  (vastu_audit.audit_layout)")
@@ -126,6 +150,19 @@ def print_audit_report(audit_result):
         print(f"  [INFO {n['rule_type']:<24}] {n['message']}")
     print()
 
+    print("-" * 78)
+    print("SHAPE DEFECTS  (vastu_audit.audit_shape_defects, via shape_diagnosis)")
+    print("-" * 78)
+    sviolations = audit_result.get("shape_defect_violations", [])
+    snotes = audit_result.get("shape_defect_notes", [])
+    if not sviolations and not snotes:
+        print("(no shape defects or notes)")
+    for v in sviolations:
+        print(f"  [SCORED {v['severity']:<5}] {v['rule_type']}: {v['violation']}")
+    for n in snotes:
+        print(f"  [INFO {n['rule_type']:<20}] {n['message']}")
+    print()
+
 
 def main():
     fixture = load_fixture(FIXTURE_PATH)
@@ -136,10 +173,20 @@ def main():
     )
     print_geometry_report(geometry_result)
 
+    shape_diagnosis = zg.diagnose_shape(
+        fixture["boundary"], north_offset_deg=fixture["north_offset_deg"]
+    )
+    print_shape_report(shape_diagnosis)
+
     schema = load_schema(SCHEMA_PATH)
     audit_input = build_audit_input(geometry_result)
     brahmasthan_input = build_brahmasthan_input(geometry_result)
-    audit_result = audit_layout(audit_input, schema, geometry_results=brahmasthan_input)
+    audit_result = audit_layout(
+        audit_input,
+        schema,
+        geometry_results=brahmasthan_input,
+        shape_diagnosis=shape_diagnosis,
+    )
     print_audit_report(audit_result)
 
 

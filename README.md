@@ -53,6 +53,35 @@ to the flat's true geometric centre (Brahmasthan), computed as the
 occupied-area polygon centroid rather than a bounding-box centre. See the
 module docstring for the full coordinate/bearing conventions.
 
+### `diagnose_shape()` — footprint-level shape defects (dual-centre + missing zones)
+
+A separate, footprint-level diagnostic (not per-room) that catches the two
+classic irregular-plan defects a bounding box hides:
+
+* **Hollow / external centre.** For a U-shaped (or strongly concave) flat the
+  true area centroid — the Brahmasthan — can fall in open space *outside the
+  built footprint entirely*. This is checked with a direct point-in-polygon
+  test, **independently of the centroid-vs-bounding-box offset magnitude**: a
+  footprint can have a *small* offset yet still place its centroid outside
+  itself (a U-shape does exactly this), so an offset-size check alone would
+  miss it. The dual-centre comparison (true centroid vs. bounding-box centre)
+  is also reported, with a strongly off-centre mass distribution flagged
+  separately as `high_center_offset` (informational, not itself a defect).
+* **Cut / missing zones.** The bounding box minus the actual footprint is the
+  set of "cut corners"; each region above a noise threshold is labelled by the
+  compass octant it sits in (NE/SW/SE/NW/…), which is how the traditional
+  "missing NE / missing SW" remedies are indexed.
+
+This is deterministic geometry only. The rule/severity/remedy layer lives in
+`vastu_audit.audit_shape_defects()` (wired into `audit_layout()` via an
+optional `shape_diagnosis=` argument, additive and backward-compatible). The
+two thresholds `diagnose_shape` uses (centre-offset fraction, missing-zone
+area fraction) are documented **product choices, not settled Vastu constants**,
+and the missing-zone severity map in `vastu_audit` is flagged as pending the
+same licensed-consultant sign-off as the rest of the schema. Run the end-to-end
+demo (`python3 genesis/engine/run_geometry.py`) to see it on the Unit 12
+L-shaped fixture, where it reports a cut NE zone as a scored major defect.
+
 ## `scene/` — deterministic 3D scene assembly + depth-map export
 
 Takes room polygons (in `zone_geometry.py`'s coordinate convention) plus
