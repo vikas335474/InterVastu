@@ -110,10 +110,18 @@ without hand-typing coordinate JSON:
    PDFs must be exported/screenshotted as an image first, no PDF rendering
    is included). Without an upload, tracing happens directly on a plain grid
    (default 1 square = 1 ft, adjustable) instead.
-2. **Photo mode only:** calibrate the scale — click two points a known
-   real-world distance apart (e.g. a door), then type that distance in feet.
-   Tracing is refused until this is done, so nothing is silently traced at
-   the wrong scale.
+2. **Photo mode: calibration is recommended, not required.** Click two
+   points a known real-world distance apart (e.g. a door) and type that
+   distance in feet — but tracing is never blocked on this. Skipping it uses
+   image pixels as a placeholder unit instead of refusing outright, because
+   most of the Vastu geometry (hollow/external-centre check, missing-zone
+   direction, room-to-centre compass zones) only depends on angles and area
+   *ratios* — it comes out correct either way. Only absolute measurements
+   (sq ft, furniture-fit suggestions) need the real calibration, and a clear
+   badge/banner says so whenever a trace is uncalibrated. Calibrating at any
+   point — including after tracing — rescales everything already traced to
+   match (`recomputeAllFeetFromPx`, driven off each shape's permanently
+   retained pixel points), so nothing ends up mixing units within a session.
 3. Click around the flat's outer wall, corner by corner, then "Finish shape"
    to commit the boundary — this writes straight into the `#plot-boundary`
    field above.

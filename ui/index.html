@@ -100,6 +100,7 @@
   </span>
 
   <div id="trace-status" class="trace-status">Trace directly on the grid below, or upload a floor plan photo first.</div>
+  <div id="calibration-badge" class="trace-status" style="display:none; border-color:#d68910; background:#fef5e7;"></div>
 
   <canvas id="trace-canvas" width="720" height="480"></canvas>
 
@@ -411,6 +412,15 @@ function renderResults(result) {
   const el = document.getElementById('results');
 
   let html = '';
+  if (planImage && !calibrated && (boundaryShape || tracedRooms.length)) {
+    html += `<div class="warning" style="border-color:#d68910; background:#fef5e7;">
+      <strong>Traced without a scale.</strong> Shape and direction findings below
+      (hollow-centre, missing zones, room compass zones) are still correct — they
+      only depend on angles and area proportions. Any distance/area figures shown
+      in feet are placeholder units, not real measurements, until you calibrate
+      the trace (click "Set scale" above and re-audit).
+    </div>`;
+  }
   html += `<h2>Results</h2>`;
   html += `<div class="counts">
     <span>Major violations: <strong>${result.major_count}</strong></span>
@@ -671,7 +681,8 @@ const GRID_PX = 40; // fixed on-screen pixel size of one grid square (grid mode 
 const ROOM_COLORS = ['#2e7d32', '#1565c0', '#8e24aa', '#ef6c00', '#00838f', '#ad1457', '#6d4c41'];
 
 let planImage = null;    // Image object, or null (plain-grid mode)
-let pxPerFoot = null;    // null until known; grid mode always knows it, photo mode needs calibration
+let pxPerFoot = null;    // grid mode: always a real scale. Photo mode: 1.0 (placeholder) until calibrated.
+let calibrated = true;   // false only in photo mode before the user completes calibration
 let gridFeetPerSquare = 1;
 let traceMode = 'idle';  // 'idle' | 'calibrate' | 'boundary' | 'room'
 let calibPoints = [];    // up to 2 [px,py] pairs, photo mode only
@@ -694,9 +705,11 @@ function initGrid() {
   traceCanvas.width = 720;
   traceCanvas.height = 480;
   pxPerFoot = GRID_PX / gridFeetPerSquare;
+  calibrated = true; // an explicit "1 square = X ft" IS a real scale, just not photo-calibrated
   document.getElementById('calibrate-btn').style.display = 'none';
   document.getElementById('clear-image-btn').style.display = 'none';
   document.getElementById('grid-scale-wrap').style.display = '';
+  updateCalibrationBadge();
   redrawTrace();
 }
 
@@ -711,7 +724,16 @@ function loadPlanImage(file) {
     planImage = img;
     traceCanvas.width = w;
     traceCanvas.height = h;
-    pxPerFoot = null; // must calibrate before tracing on a photo
+    // Placeholder scale (1 canvas px = 1 unit) so tracing is never blocked --
+    // see updateCalibrationBadge()/module notes: shape/direction results
+    // (hollow-centre, missing zones, room compass zones) are correct
+    // regardless of scale, since they only depend on angles and area
+    // RATIOS. Only absolute measurements (sq ft, furniture-fit suggestions)
+    // need the real calibration. Calibrating later rescales everything
+    // already traced (see recomputeAllFeetFromPx) -- nothing is lost by
+    // skipping it now.
+    pxPerFoot = 1.0;
+    calibrated = false;
     boundaryShape = null;
     tracedRooms = [];
     document.getElementById('plot-boundary').value = '';
@@ -722,10 +744,41 @@ function loadPlanImage(file) {
     draftPoints = [];
     calibPoints = [];
     renderTraceLegend();
-    setTraceStatus('Photo loaded. Click "Set scale", then click two points on a wall/edge whose real length you know (e.g. a door) before tracing.');
+    updateCalibrationBadge();
+    setTraceStatus('Photo loaded. You can trace right away — shape and direction results will be correct either way. For real measurements (sq ft, furniture fit), click "Set scale" and click two points a known distance apart (e.g. a door) — you can do this any time, even after tracing.');
     redrawTrace();
   };
   img.src = URL.createObjectURL(file);
+}
+
+function updateCalibrationBadge() {
+  const el = document.getElementById('calibration-badge');
+  if (planImage && !calibrated) {
+    el.textContent = '⚠ Not calibrated — distances/areas below are placeholder units, not real feet, until you set the scale. Shape and direction findings (hollow-centre, missing zones, room compass zones) are unaffected and already correct.';
+    el.style.display = '';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+// Re-derives every already-committed shape's feet coordinates from its
+// stored pixel points using the CURRENT pxPerFoot, and rewrites the fields
+// they feed. Called whenever the scale changes (calibration completes, or
+// the grid's feet-per-square is edited) so nothing ends up mixing shapes
+// traced at different scales within the same session -- pxPoints are kept
+// as the permanent ground truth precisely so this is always possible.
+function recomputeAllFeetFromPx() {
+  if (boundaryShape) {
+    boundaryShape.feetPoints = boundaryShape.pxPoints.map(([px, py]) => pxToFeet(px, py));
+    document.getElementById('plot-boundary').value = JSON.stringify(boundaryShape.feetPoints);
+  }
+  tracedRooms.forEach(r => {
+    r.feetPoints = r.pxPoints.map(([px, py]) => pxToFeet(px, py));
+    const field = document.querySelector(`.room-row[data-trace-id="${r.id}"] .room-polygon`);
+    if (field) field.value = JSON.stringify(r.feetPoints);
+  });
+  renderTraceLegend();
 }
 
 function snapIfGrid(px, py) {
@@ -813,22 +866,25 @@ function handleTracePoint(clientX, clientY) {
       const feet = parseFloat(feetStr);
       if (feetStr !== null && !isNaN(feet) && feet > 0) {
         pxPerFoot = dist / feet;
-        setTraceStatus(`Scale set: ${pxPerFoot.toFixed(2)} px/ft. Now trace the boundary or a room.`);
+        calibrated = true;
+        const hadPriorTraces = boundaryShape || tracedRooms.length;
+        recomputeAllFeetFromPx();
+        setTraceStatus(
+          `Scale set: ${pxPerFoot.toFixed(2)} px/ft.` +
+          (hadPriorTraces ? ' Previously traced shapes were rescaled to match.' : ' Now trace the boundary or a room.')
+        );
       } else {
-        setTraceStatus('Scale not set (invalid or cancelled). Click "Set scale" to try again.');
+        setTraceStatus('Scale not set (invalid or cancelled) — still fine to keep tracing, just click "Set scale" again whenever you have a measurement.');
       }
       traceMode = 'idle';
       calibPoints = [];
+      updateCalibrationBadge();
     }
     redrawTrace();
     return;
   }
 
   if (traceMode === 'boundary' || traceMode === 'room') {
-    if (pxPerFoot === null) {
-      setTraceStatus('Set the scale first (click "Set scale") before tracing on a photo.');
-      return;
-    }
     draftPoints.push([x, y]);
     document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
     const what = traceMode === 'boundary' ? "flat's outer wall" : 'room';
@@ -848,10 +904,6 @@ function startMode(newMode) {
   if (draftPoints.length > 0 && (traceMode === 'boundary' || traceMode === 'room')) {
     if (!confirm(`Discard the ${draftPoints.length}-point trace in progress and start a new one?`)) return;
   }
-  if ((newMode === 'boundary' || newMode === 'room') && pxPerFoot === null) {
-    setTraceStatus('Set the scale first (click "Set scale") before tracing on a photo.');
-    return;
-  }
   traceMode = newMode;
   draftPoints = [];
   calibPoints = [];
@@ -861,10 +913,10 @@ function startMode(newMode) {
   if (newMode === 'calibrate') {
     setTraceStatus('Click the first point of a wall/edge whose real length you know.');
   } else if (newMode === 'boundary') {
-    setTraceStatus("Click around the flat's outer boundary, corner by corner.");
+    setTraceStatus("Click around the flat's outer boundary, corner by corner." + (calibrated ? '' : ' (Not calibrated yet — that only affects the ft²/distance numbers, not the shape itself.)'));
   } else if (newMode === 'room') {
     const roomType = document.getElementById('trace-room-type').value;
-    setTraceStatus(`Click around the ${roomType}'s walls, corner by corner.`);
+    setTraceStatus(`Click around the ${roomType}'s walls, corner by corner.` + (calibrated ? '' : ' (Not calibrated yet — that only affects the ft²/distance numbers, not the shape itself.)'));
   }
   redrawTrace();
 }
@@ -991,6 +1043,11 @@ document.getElementById('grid-feet-per-square').addEventListener('change', (e) =
   if (!isNaN(v) && v > 0 && !planImage) {
     gridFeetPerSquare = v;
     pxPerFoot = GRID_PX / gridFeetPerSquare;
+    // Rescale anything already traced under the old grid scale -- without
+    // this, shapes traced before vs. after the change would silently end up
+    // in different units within the same session (the same bug class this
+    // whole tool exists to avoid).
+    recomputeAllFeetFromPx();
     redrawTrace();
   }
 });
