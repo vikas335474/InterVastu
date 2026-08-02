@@ -100,6 +100,47 @@ neither file adds any new placement logic of its own.
   as part of a flat's version input, so reloading a saved flat restores its
   polygons and suggestion settings exactly as entered.
 
+## Floor plan tracing tool (photo upload + click-to-trace)
+
+The "Trace your floor plan" fieldset (shown first, above Plot/Rooms) is a
+guided, click-to-trace aid for building the boundary and room polygons
+without hand-typing coordinate JSON:
+
+1. Optionally upload a floor-plan photo/scan (any raster image format —
+   PDFs must be exported/screenshotted as an image first, no PDF rendering
+   is included). Without an upload, tracing happens directly on a plain grid
+   (default 1 square = 1 ft, adjustable) instead.
+2. **Photo mode only:** calibrate the scale — click two points a known
+   real-world distance apart (e.g. a door), then type that distance in feet.
+   Tracing is refused until this is done, so nothing is silently traced at
+   the wrong scale.
+3. Click around the flat's outer wall, corner by corner, then "Finish shape"
+   to commit the boundary — this writes straight into the `#plot-boundary`
+   field above.
+4. Pick a room type, click around its walls, "Finish shape" — this adds a
+   new row to the Rooms list below with that room's polygon pre-filled (you
+   still pick its compass zone there; tracing does not compute the zone).
+   Repeat for each room.
+5. Drag the compass needle to set which way is North on the plan; this
+   writes into the existing "Facade bearing" field, using the exact same
+   0=N/clockwise convention `zone_geometry.py` uses internally.
+
+**What this deliberately is NOT**: there is no automatic wall/room detection
+(computer vision) anywhere in this tool. Every point comes from a human
+click; the tool only measures distances and angles from those clicks and
+converts pixels to feet via the calibration step. This is a conscious
+design choice — automatic CV extraction from a photo is failure-prone
+(scale, wall detection, OCR) and a silently-wrong extraction would corrupt
+every downstream Vastu calculation without the user ever knowing. The
+click-to-trace approach keeps a human validating every coordinate while
+still avoiding hand-typed JSON.
+
+All of this is a pure client-side convenience layer over fields that already
+existed and already worked without it (`#plot-boundary`, each room's
+`.room-polygon` textarea, `#facade-bearing`) — no server or engine change was
+needed to add it, and the underlying JSON fields stay visible/editable so
+nothing is hidden from the person doing the audit.
+
 ## Shape diagnosis (hollow-centre + missing zones)
 
 The Plot fieldset has an optional **flat boundary polygon** field (JSON

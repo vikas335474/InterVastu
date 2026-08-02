@@ -46,6 +46,21 @@
   .ritual-details summary { cursor: pointer; color: #6a4c93; font-weight: 600; }
   .ritual-box { background: #f7f2fb; border-left: 4px solid #6a4c93; padding: 0.5rem 0.75rem; margin-top: 0.35rem; }
   .ritual-box .disclaimer { color: #777; font-style: italic; margin-top: 0.35rem; }
+  .trace-steps { font-size: 0.9rem; margin: 0.5rem 0; padding-left: 1.3rem; }
+  .trace-status { background: #eef2f8; border-left: 4px solid #4a6fa5; padding: 0.5rem 0.75rem; margin: 0.6rem 0; font-size: 0.9rem; }
+  #trace-canvas { border: 1px solid #bbb; touch-action: none; max-width: 100%; display: block; margin: 0.5rem 0; }
+  #trace-canvas.mode-active { cursor: crosshair; }
+  .trace-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
+  .trace-controls button { font-size: 0.85rem; }
+  .trace-controls button.primary { background: #2e5aac; color: #fff; border: none; border-radius: 3px; padding: 0.4rem 0.8rem; }
+  .trace-legend { font-size: 0.85rem; margin-top: 0.5rem; }
+  .trace-legend .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+  .trace-legend .swatch { width: 0.8rem; height: 0.8rem; display: inline-block; border-radius: 2px; }
+  .trace-legend .legend-remove { font-size: 0.75rem; padding: 0.1rem 0.5rem; }
+  .compass-wrap { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+  .compass-dial { width: 84px; height: 84px; border-radius: 50%; border: 2px solid #888; position: relative; cursor: grab; background: #fff; flex-shrink: 0; }
+  .compass-dial .n-label { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: #888; font-weight: bold; }
+  .compass-needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 34px; background: #c0392b; transform-origin: bottom center; transform: translate(-50%, -100%) rotate(0deg); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -57,6 +72,61 @@
   <legend>Saved flats</legend>
   <label>Your name/owner label: <input type="text" id="owner-name" placeholder="e.g. vikas"></label>
   <div id="flats-list" class="muted">Loading…</div>
+</fieldset>
+
+<fieldset>
+  <legend>Trace your floor plan (recommended)</legend>
+  <p class="muted">
+    Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
+    the coordinates the engine needs, with no typing of raw numbers required.
+    <strong>Nothing here auto-detects walls or rooms</strong> — you click where
+    they are, this tool only measures distances and angles from your clicks.
+    Everything it fills in stays visible in the Plot/Rooms fields below, so you
+    can always check or hand-edit it.
+  </p>
+  <ol class="trace-steps">
+    <li>Optional: upload a photo of your floor plan (skip this to trace on a plain grid instead).</li>
+    <li>If you uploaded a photo: set the scale — click two points a known real-world distance apart (e.g. a door), then type that distance.</li>
+    <li>Trace the flat's outer boundary.</li>
+    <li>Trace each room, one at a time (repeat as needed).</li>
+    <li>Set which way is North using the dial.</li>
+  </ol>
+
+  <label>Floor plan photo (optional): <input type="file" id="plan-image-input" accept="image/*"></label>
+  <button type="button" id="clear-image-btn" style="display:none;">Remove photo, use plain grid</button>
+  <span id="grid-scale-wrap">
+    &nbsp;|&nbsp;
+    <label>Grid scale (only used without a photo): each square = <input type="number" id="grid-feet-per-square" value="1" min="0.1" step="0.1" style="width:3.5rem;"> ft</label>
+  </span>
+
+  <div id="trace-status" class="trace-status">Trace directly on the grid below, or upload a floor plan photo first.</div>
+
+  <canvas id="trace-canvas" width="720" height="480"></canvas>
+
+  <div class="trace-controls">
+    <button type="button" id="calibrate-btn" style="display:none;">Set scale (click 2 points)</button>
+    <button type="button" id="trace-boundary-btn" class="primary">Trace flat boundary</button>
+    <select id="trace-room-type"></select>
+    <button type="button" id="trace-room-btn" class="primary">Trace this room</button>
+    <button type="button" id="undo-point-btn">Undo last point</button>
+    <button type="button" id="finish-shape-btn" style="display:none;">Finish shape</button>
+    <button type="button" id="cancel-shape-btn" style="display:none;">Cancel</button>
+    <button type="button" id="reset-trace-btn">Reset tracing</button>
+  </div>
+
+  <div class="compass-wrap">
+    <div>
+      <strong>North direction</strong><br>
+      <span class="muted">Drag the needle to match your plan's North arrow or a compass reading. Leave it pointing up if the image's "up" is already North.</span>
+    </div>
+    <div class="compass-dial" id="compass-dial">
+      <span class="n-label">N</span>
+      <div class="compass-needle" id="compass-needle"></div>
+    </div>
+    <span id="compass-readout" class="muted">0.0° (facing image-up)</span>
+  </div>
+
+  <div id="trace-legend" class="trace-legend"></div>
 </fieldset>
 
 <fieldset>
@@ -153,6 +223,7 @@ async function loadSchemaInfo() {
   const shapeSelect = document.getElementById('plot-shape');
   const shapes = [...schemaInfo.plot_shapes.preferred, ...schemaInfo.plot_shapes.forbidden];
   shapeSelect.innerHTML = shapes.map(s => `<option value="${s}">${s}</option>`).join('');
+  populateTraceRoomTypes();
 
   document.getElementById('brahmasthan-obstructed').addEventListener('change', (e) => {
     document.getElementById('obstruction-type-wrap').style.display = e.target.checked ? 'inline' : 'none';
@@ -517,6 +588,12 @@ function populateFormFromInput(input) {
     }
   });
   if (!(input.rooms || []).length) addRoomRow();
+
+  // The trace canvas/legend can't reconstruct a loaded flat's original click
+  // points (only the final feet polygons were saved), so just clear the
+  // client-side trace bookkeeping rather than show a stale/wrong legend.
+  clearTraceUiState();
+  setTraceStatus('Loaded a saved flat. Its boundary/room polygons are in the fields below (not re-drawn here) — re-trace or hand-edit the JSON if you want to change them.');
 }
 
 async function saveNewFlat() {
@@ -576,6 +653,403 @@ async function saveVersion() {
   renderResults(body.result);
   loadFlatsList();
 }
+
+// ---------------------------------------------------------------------------
+// Floor plan tracing tool: a GUIDED, click-to-trace aid. No automatic wall or
+// room detection happens anywhere here — the user identifies every point
+// themselves (on an uploaded photo, or a plain grid); this tool only measures
+// distances/angles from those clicks and converts them to feet. It writes
+// its output into the SAME #plot-boundary / room ".room-polygon" fields the
+// rest of the form already used before this tool existed — it introduces no
+// new data shape, just a friendlier way to fill in fields that already work.
+// ---------------------------------------------------------------------------
+
+const traceCanvas = document.getElementById('trace-canvas');
+const traceCtx = traceCanvas.getContext('2d');
+
+const GRID_PX = 40; // fixed on-screen pixel size of one grid square (grid mode only)
+const ROOM_COLORS = ['#2e7d32', '#1565c0', '#8e24aa', '#ef6c00', '#00838f', '#ad1457', '#6d4c41'];
+
+let planImage = null;    // Image object, or null (plain-grid mode)
+let pxPerFoot = null;    // null until known; grid mode always knows it, photo mode needs calibration
+let gridFeetPerSquare = 1;
+let traceMode = 'idle';  // 'idle' | 'calibrate' | 'boundary' | 'room'
+let calibPoints = [];    // up to 2 [px,py] pairs, photo mode only
+let draftPoints = [];    // in-progress boundary/room points, in canvas px
+let boundaryShape = null;   // { pxPoints, feetPoints } or null
+let tracedRooms = [];       // [{ id, name, pxPoints, feetPoints }]
+let traceIdCounter = 0;
+
+function setTraceStatus(msg) {
+  document.getElementById('trace-status').textContent = msg;
+}
+
+function populateTraceRoomTypes() {
+  document.getElementById('trace-room-type').innerHTML =
+    schemaInfo.room_types.map(r => `<option value="${r}">${r}</option>`).join('');
+}
+
+function initGrid() {
+  planImage = null;
+  traceCanvas.width = 720;
+  traceCanvas.height = 480;
+  pxPerFoot = GRID_PX / gridFeetPerSquare;
+  document.getElementById('calibrate-btn').style.display = 'none';
+  document.getElementById('clear-image-btn').style.display = 'none';
+  document.getElementById('grid-scale-wrap').style.display = '';
+  redrawTrace();
+}
+
+function loadPlanImage(file) {
+  const img = new Image();
+  img.onload = () => {
+    const maxW = 760, maxH = 900;
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const scale = Math.min(maxW / w, maxH / h, 1);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+    planImage = img;
+    traceCanvas.width = w;
+    traceCanvas.height = h;
+    pxPerFoot = null; // must calibrate before tracing on a photo
+    boundaryShape = null;
+    tracedRooms = [];
+    document.getElementById('plot-boundary').value = '';
+    document.getElementById('calibrate-btn').style.display = '';
+    document.getElementById('clear-image-btn').style.display = '';
+    document.getElementById('grid-scale-wrap').style.display = 'none';
+    traceMode = 'idle';
+    draftPoints = [];
+    calibPoints = [];
+    renderTraceLegend();
+    setTraceStatus('Photo loaded. Click "Set scale", then click two points on a wall/edge whose real length you know (e.g. a door) before tracing.');
+    redrawTrace();
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function snapIfGrid(px, py) {
+  if (planImage) return [px, py];
+  return [Math.round(px / GRID_PX) * GRID_PX, Math.round(py / GRID_PX) * GRID_PX];
+}
+
+function pxToFeet(px, py) {
+  const fx = px / pxPerFoot;
+  const fy = (traceCanvas.height - py) / pxPerFoot; // flip y: canvas-down -> feet-up
+  return [Math.round(fx * 100) / 100, Math.round(fy * 100) / 100];
+}
+
+function drawPolygon(pxPoints, color, closed, label) {
+  if (!pxPoints.length) return;
+  const ctx = traceCtx;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pxPoints[0][0], pxPoints[0][1]);
+  for (let i = 1; i < pxPoints.length; i++) ctx.lineTo(pxPoints[i][0], pxPoints[i][1]);
+  if (closed && pxPoints.length > 2) ctx.closePath();
+  ctx.stroke();
+  pxPoints.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 3, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+  if (label) {
+    const cx = pxPoints.reduce((s, p) => s + p[0], 0) / pxPoints.length;
+    const cy = pxPoints.reduce((s, p) => s + p[1], 0) / pxPoints.length;
+    ctx.font = '12px sans-serif';
+    ctx.fillText(label, cx + 4, cy);
+  }
+}
+
+function redrawTrace() {
+  const ctx = traceCtx;
+  ctx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
+  if (planImage) {
+    ctx.drawImage(planImage, 0, 0, traceCanvas.width, traceCanvas.height);
+  } else {
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0, 0, traceCanvas.width, traceCanvas.height);
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= traceCanvas.width; x += GRID_PX) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, traceCanvas.height); ctx.stroke();
+    }
+    for (let y = 0; y <= traceCanvas.height; y += GRID_PX) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(traceCanvas.width, y); ctx.stroke();
+    }
+  }
+
+  if (boundaryShape) drawPolygon(boundaryShape.pxPoints, '#c0392b', true, 'Boundary');
+  tracedRooms.forEach((r, i) => drawPolygon(r.pxPoints, ROOM_COLORS[i % ROOM_COLORS.length], true, r.name));
+
+  if (draftPoints.length) {
+    const color = traceMode === 'boundary' ? '#c0392b' : ROOM_COLORS[tracedRooms.length % ROOM_COLORS.length];
+    drawPolygon(draftPoints, color, false, null);
+  }
+  if (traceMode === 'calibrate' && calibPoints.length) {
+    drawPolygon(calibPoints, '#2e5aac', false, null);
+  }
+}
+
+function canvasPointFromClient(clientX, clientY) {
+  const rect = traceCanvas.getBoundingClientRect();
+  const x = (clientX - rect.left) * (traceCanvas.width / rect.width);
+  const y = (clientY - rect.top) * (traceCanvas.height / rect.height);
+  return snapIfGrid(x, y);
+}
+
+function handleTracePoint(clientX, clientY) {
+  const [x, y] = canvasPointFromClient(clientX, clientY);
+
+  if (traceMode === 'calibrate') {
+    calibPoints.push([x, y]);
+    if (calibPoints.length === 1) {
+      setTraceStatus('Click the second point of your known measurement.');
+    } else if (calibPoints.length === 2) {
+      const dist = Math.hypot(calibPoints[1][0] - calibPoints[0][0], calibPoints[1][1] - calibPoints[0][1]);
+      const feetStr = prompt('Real-world distance between those two points, in feet:');
+      const feet = parseFloat(feetStr);
+      if (feetStr !== null && !isNaN(feet) && feet > 0) {
+        pxPerFoot = dist / feet;
+        setTraceStatus(`Scale set: ${pxPerFoot.toFixed(2)} px/ft. Now trace the boundary or a room.`);
+      } else {
+        setTraceStatus('Scale not set (invalid or cancelled). Click "Set scale" to try again.');
+      }
+      traceMode = 'idle';
+      calibPoints = [];
+    }
+    redrawTrace();
+    return;
+  }
+
+  if (traceMode === 'boundary' || traceMode === 'room') {
+    if (pxPerFoot === null) {
+      setTraceStatus('Set the scale first (click "Set scale") before tracing on a photo.');
+      return;
+    }
+    draftPoints.push([x, y]);
+    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+    const what = traceMode === 'boundary' ? "flat's outer wall" : 'room';
+    setTraceStatus(`${draftPoints.length} point(s) placed. Keep clicking around the ${what}, then "Finish shape" (need at least 3 points).`);
+    redrawTrace();
+  }
+}
+
+traceCanvas.addEventListener('click', (evt) => handleTracePoint(evt.clientX, evt.clientY));
+traceCanvas.addEventListener('touchend', (evt) => {
+  evt.preventDefault();
+  const t = evt.changedTouches[0];
+  handleTracePoint(t.clientX, t.clientY);
+}, { passive: false });
+
+function startMode(newMode) {
+  if (draftPoints.length > 0 && (traceMode === 'boundary' || traceMode === 'room')) {
+    if (!confirm(`Discard the ${draftPoints.length}-point trace in progress and start a new one?`)) return;
+  }
+  if ((newMode === 'boundary' || newMode === 'room') && pxPerFoot === null) {
+    setTraceStatus('Set the scale first (click "Set scale") before tracing on a photo.');
+    return;
+  }
+  traceMode = newMode;
+  draftPoints = [];
+  calibPoints = [];
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = newMode === 'idle' ? 'none' : '';
+  traceCanvas.classList.add('mode-active');
+  if (newMode === 'calibrate') {
+    setTraceStatus('Click the first point of a wall/edge whose real length you know.');
+  } else if (newMode === 'boundary') {
+    setTraceStatus("Click around the flat's outer boundary, corner by corner.");
+  } else if (newMode === 'room') {
+    const roomType = document.getElementById('trace-room-type').value;
+    setTraceStatus(`Click around the ${roomType}'s walls, corner by corner.`);
+  }
+  redrawTrace();
+}
+
+function finishShape() {
+  if (draftPoints.length < 3) return;
+  const feetPoints = draftPoints.map(([px, py]) => pxToFeet(px, py));
+
+  if (traceMode === 'boundary') {
+    boundaryShape = { pxPoints: draftPoints.slice(), feetPoints };
+    document.getElementById('plot-boundary').value = JSON.stringify(feetPoints);
+    setTraceStatus('Boundary traced. Trace each room next, or adjust the Plot/Rooms fields below.');
+  } else if (traceMode === 'room') {
+    const roomType = document.getElementById('trace-room-type').value;
+    addRoomRow();
+    const row = document.querySelector('.room-row:last-child');
+    row.querySelector('.room-type').value = roomType;
+    updateFlags(row);
+    row.querySelector('.room-polygon').value = JSON.stringify(feetPoints);
+    const id = traceIdCounter++;
+    row.dataset.traceId = id;
+    tracedRooms.push({ id, name: roomType, pxPoints: draftPoints.slice(), feetPoints });
+    setTraceStatus(`${roomType} traced and added to the Rooms list below. Pick its zone there, then trace the next room (or click Audit).`);
+  }
+
+  traceMode = 'idle';
+  draftPoints = [];
+  traceCanvas.classList.remove('mode-active');
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = 'none';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function cancelShape() {
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  traceCanvas.classList.remove('mode-active');
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = 'none';
+  setTraceStatus('Cancelled. Choose an action to continue tracing.');
+  redrawTrace();
+}
+
+function undoLastPoint() {
+  if (traceMode === 'calibrate' && calibPoints.length) {
+    calibPoints.pop();
+  } else if (draftPoints.length) {
+    draftPoints.pop();
+    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+  }
+  redrawTrace();
+}
+
+function resetTracing() {
+  boundaryShape = null;
+  tracedRooms = [];
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  document.getElementById('plot-boundary').value = '';
+  renderTraceLegend();
+  redrawTrace();
+  setTraceStatus('Tracing cleared. Previously added room rows below were left as-is — remove them there if you no longer need them.');
+}
+
+function clearTraceUiState() {
+  boundaryShape = null;
+  tracedRooms = [];
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function removeBoundaryTrace() {
+  boundaryShape = null;
+  document.getElementById('plot-boundary').value = '';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function removeTracedRoom(id) {
+  const idx = tracedRooms.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const row = document.querySelector(`.room-row[data-trace-id="${id}"]`);
+  if (row) row.remove();
+  tracedRooms.splice(idx, 1);
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function renderTraceLegend() {
+  const el = document.getElementById('trace-legend');
+  let html = '';
+  if (boundaryShape) {
+    html += `<div class="legend-row"><span class="swatch" style="background:#c0392b;"></span> Boundary (${boundaryShape.feetPoints.length} pts) <button type="button" class="legend-remove" data-kind="boundary">Remove</button></div>`;
+  }
+  tracedRooms.forEach((r, i) => {
+    html += `<div class="legend-row"><span class="swatch" style="background:${ROOM_COLORS[i % ROOM_COLORS.length]};"></span> ${r.name} (${r.feetPoints.length} pts) <button type="button" class="legend-remove" data-kind="room" data-id="${r.id}">Remove</button></div>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.legend-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.kind === 'boundary') removeBoundaryTrace();
+      else removeTracedRoom(parseInt(btn.dataset.id, 10));
+    });
+  });
+}
+
+document.getElementById('plan-image-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadPlanImage(file);
+});
+document.getElementById('clear-image-btn').addEventListener('click', () => {
+  document.getElementById('plan-image-input').value = '';
+  initGrid();
+  setTraceStatus('Back to plain grid. Trace directly, or upload another photo.');
+});
+document.getElementById('grid-feet-per-square').addEventListener('change', (e) => {
+  const v = parseFloat(e.target.value);
+  if (!isNaN(v) && v > 0 && !planImage) {
+    gridFeetPerSquare = v;
+    pxPerFoot = GRID_PX / gridFeetPerSquare;
+    redrawTrace();
+  }
+});
+document.getElementById('calibrate-btn').addEventListener('click', () => startMode('calibrate'));
+document.getElementById('trace-boundary-btn').addEventListener('click', () => startMode('boundary'));
+document.getElementById('trace-room-btn').addEventListener('click', () => startMode('room'));
+document.getElementById('undo-point-btn').addEventListener('click', undoLastPoint);
+document.getElementById('finish-shape-btn').addEventListener('click', finishShape);
+document.getElementById('cancel-shape-btn').addEventListener('click', cancelShape);
+document.getElementById('reset-trace-btn').addEventListener('click', resetTracing);
+
+// --- Compass dial: writes facade-bearing in the SAME convention
+// zone_geometry.py's bearing_deg() uses (0 = N, clockwise). -----------------
+const compassDial = document.getElementById('compass-dial');
+const compassNeedle = document.getElementById('compass-needle');
+let compassDragging = false;
+
+function setCompassAngle(deg) {
+  deg = ((deg % 360) + 360) % 360;
+  compassNeedle.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
+  document.getElementById('compass-readout').textContent = `${deg.toFixed(1)}° (facing image-up)`;
+  document.getElementById('facade-bearing').value = deg.toFixed(1);
+}
+
+function angleFromClientXY(clientX, clientY) {
+  const rect = compassDial.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
+  return Math.atan2(dx, -dy) * 180 / Math.PI;
+}
+
+compassDial.addEventListener('mousedown', (evt) => {
+  evt.preventDefault();
+  compassDragging = true;
+  setCompassAngle(angleFromClientXY(evt.clientX, evt.clientY));
+});
+window.addEventListener('mousemove', (evt) => {
+  if (compassDragging) setCompassAngle(angleFromClientXY(evt.clientX, evt.clientY));
+});
+window.addEventListener('mouseup', () => { compassDragging = false; });
+
+compassDial.addEventListener('touchstart', (evt) => {
+  evt.preventDefault();
+  compassDragging = true;
+  const t = evt.touches[0];
+  setCompassAngle(angleFromClientXY(t.clientX, t.clientY));
+}, { passive: false });
+window.addEventListener('touchmove', (evt) => {
+  if (compassDragging && evt.touches.length) {
+    const t = evt.touches[0];
+    setCompassAngle(angleFromClientXY(t.clientX, t.clientY));
+  }
+}, { passive: true });
+window.addEventListener('touchend', () => { compassDragging = false; });
+
+initGrid();
+renderTraceLegend();
 
 document.getElementById('audit-btn').addEventListener('click', runAudit);
 document.getElementById('save-new-btn').addEventListener('click', saveNewFlat);
