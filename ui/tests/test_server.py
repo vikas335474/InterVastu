@@ -1,8 +1,11 @@
-"""Integration tests for the /flats persistence endpoints in server.py.
+"""Integration tests for auth (/auth/*) and the /flats persistence
+endpoints in server.py.
 
 Each test gets a fresh temp SQLite file (server.DB_PATH is monkeypatched
 before the client is built) so tests never share state or touch the real
-ui/vastu_ui.db.
+ui/vastu_ui.db. FastAPI's TestClient keeps a cookie jar per instance, so
+logging in once on a client is enough for subsequent requests on that same
+client to carry the session cookie automatically.
 """
 
 import pytest
@@ -14,19 +17,107 @@ import server
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "DB_PATH", str(tmp_path / "test.db"))
+    # TestClient talks to the app over plain http (base_url "http://testserver"),
+    # so a cookie marked Secure would never be stored/replayed by the client's
+    # cookie jar -- disable that flag for tests the same way a real local-dev
+    # run would via VASTU_UI_INSECURE_COOKIES=1.
+    monkeypatch.setattr(server, "COOKIE_SECURE", False)
     return TestClient(server.app)
+
+
+@pytest.fixture
+def auth_client(client):
+    """A client already registered + logged in as a fresh user."""
+    resp = client.post("/auth/register", json={"username": "vikas", "password": "correct-horse-battery"})
+    assert resp.status_code == 200
+    return client
 
 
 COMPLIANT_LAYOUT = {
     "label": "Unit 12",
-    "owner": "vikas",
     "plot": {"shape": "rectangle", "brahmasthan_obstructed": False},
     "rooms": [{"name": "Kitchen", "zone": "SE"}],
 }
 
 
-def test_create_flat_persists_and_returns_audit_result(client):
-    resp = client.post("/flats", json=COMPLIANT_LAYOUT)
+# ---------------------------------------------------------------------------
+# Auth: register / login / logout / me
+# ---------------------------------------------------------------------------
+
+def test_register_creates_user_and_logs_in(client):
+    resp = client.post("/auth/register", json={"username": "vikas", "password": "correct-horse-battery"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["username"] == "vikas"
+    assert "vastu_session" in resp.cookies
+
+    me = client.get("/auth/me")
+    assert me.status_code == 200
+    assert me.json()["username"] == "vikas"
+
+
+def test_register_rejects_short_password(client):
+    resp = client.post("/auth/register", json={"username": "vikas", "password": "short"})
+    assert resp.status_code == 400
+
+
+def test_register_rejects_invalid_username(client):
+    resp = client.post("/auth/register", json={"username": "a", "password": "correct-horse-battery"})
+    assert resp.status_code == 400
+
+
+def test_register_rejects_duplicate_username(client):
+    client.post("/auth/register", json={"username": "vikas", "password": "correct-horse-battery"})
+    resp = client.post("/auth/register", json={"username": "vikas", "password": "another-password"})
+    assert resp.status_code == 409
+
+
+def test_login_with_correct_credentials_succeeds(client):
+    client.post("/auth/register", json={"username": "vikas", "password": "correct-horse-battery"})
+    client.post("/auth/logout")
+
+    resp = client.post("/auth/login", json={"username": "vikas", "password": "correct-horse-battery"})
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "vikas"
+
+
+def test_login_with_wrong_password_fails(client):
+    client.post("/auth/register", json={"username": "vikas", "password": "correct-horse-battery"})
+    resp = client.post("/auth/login", json={"username": "vikas", "password": "wrong-password"})
+    assert resp.status_code == 401
+
+
+def test_login_with_unknown_username_fails(client):
+    resp = client.post("/auth/login", json={"username": "nobody", "password": "whatever123"})
+    assert resp.status_code == 401
+
+
+def test_me_requires_login(client):
+    resp = client.get("/auth/me")
+    assert resp.status_code == 401
+
+
+def test_logout_invalidates_session(auth_client):
+    assert auth_client.get("/auth/me").status_code == 200
+    auth_client.post("/auth/logout")
+    assert auth_client.get("/auth/me").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /flats* endpoints require login
+# ---------------------------------------------------------------------------
+
+def test_flats_endpoints_require_login(client):
+    assert client.get("/flats").status_code == 401
+    assert client.post("/flats", json=COMPLIANT_LAYOUT).status_code == 401
+    assert client.get("/flats/1").status_code == 401
+    assert client.post("/flats/1/versions", json=COMPLIANT_LAYOUT).status_code == 401
+    assert client.get("/flats/1/versions/1").status_code == 401
+    assert client.delete("/flats/1").status_code == 401
+
+
+def test_create_flat_persists_and_returns_audit_result(auth_client):
+    resp = auth_client.post("/flats", json=COMPLIANT_LAYOUT)
     assert resp.status_code == 200
     body = resp.json()
     assert body["flat_id"] is not None
@@ -35,31 +126,43 @@ def test_create_flat_persists_and_returns_audit_result(client):
     assert body["result"]["major_count"] == 0
 
 
-def test_create_flat_requires_label_and_owner(client):
+def test_create_flat_requires_label(auth_client):
     bad = {"plot": {}, "rooms": []}
-    resp = client.post("/flats", json=bad)
+    resp = auth_client.post("/flats", json=bad)
     assert resp.status_code == 400
 
 
-def test_get_flat_returns_saved_flat_with_versions(client):
-    created = client.post("/flats", json=COMPLIANT_LAYOUT).json()
+def test_get_flat_returns_saved_flat_with_versions(auth_client):
+    created = auth_client.post("/flats", json=COMPLIANT_LAYOUT).json()
     flat_id = created["flat_id"]
 
-    resp = client.get(f"/flats/{flat_id}")
+    resp = auth_client.get(f"/flats/{flat_id}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["label"] == "Unit 12"
-    assert body["owner"] == "vikas"
     assert len(body["versions"]) == 1
 
 
-def test_get_flat_404_for_missing_id(client):
-    resp = client.get("/flats/999")
+def test_get_flat_404_for_missing_id(auth_client):
+    resp = auth_client.get("/flats/999")
     assert resp.status_code == 404
 
 
-def test_add_version_creates_second_version_and_reaudits(client):
+def test_flats_are_scoped_to_the_owning_user(client):
+    client.post("/auth/register", json={"username": "alice", "password": "correct-horse-battery"})
     created = client.post("/flats", json=COMPLIANT_LAYOUT).json()
+    flat_id = created["flat_id"]
+    client.post("/auth/logout")
+
+    client.post("/auth/register", json={"username": "bob", "password": "another-horse-battery"})
+    # bob can't see or touch alice's flat -- same 404 as a nonexistent id.
+    assert client.get(f"/flats/{flat_id}").status_code == 404
+    assert client.get("/flats").json() == []
+    assert client.delete(f"/flats/{flat_id}").status_code == 404
+
+
+def test_add_version_creates_second_version_and_reaudits(auth_client):
+    created = auth_client.post("/flats", json=COMPLIANT_LAYOUT).json()
     flat_id = created["flat_id"]
 
     edited = {
@@ -67,41 +170,41 @@ def test_add_version_creates_second_version_and_reaudits(client):
         "rooms": [{"name": "Kitchen", "zone": "NE"}],  # forbidden, major
         "note": "moved kitchen to NE by mistake",
     }
-    resp = client.post(f"/flats/{flat_id}/versions", json=edited)
+    resp = auth_client.post(f"/flats/{flat_id}/versions", json=edited)
     assert resp.status_code == 200
     body = resp.json()
     assert body["version"] == 2
     assert body["result"]["major_count"] == 1
 
     # Original version 1 is untouched -- history is preserved for comparison.
-    v1 = client.get(f"/flats/{flat_id}/versions/1").json()
+    v1 = auth_client.get(f"/flats/{flat_id}/versions/1").json()
     assert v1["result"]["major_count"] == 0
-    v2 = client.get(f"/flats/{flat_id}/versions/2").json()
+    v2 = auth_client.get(f"/flats/{flat_id}/versions/2").json()
     assert v2["result"]["major_count"] == 1
     assert v2["note"] == "moved kitchen to NE by mistake"
 
 
-def test_add_version_404_for_missing_flat(client):
-    resp = client.post("/flats/999/versions", json=COMPLIANT_LAYOUT)
+def test_add_version_404_for_missing_flat(auth_client):
+    resp = auth_client.post("/flats/999/versions", json=COMPLIANT_LAYOUT)
     assert resp.status_code == 404
 
 
-def test_get_version_404_for_missing_version(client):
-    created = client.post("/flats", json=COMPLIANT_LAYOUT).json()
+def test_get_version_404_for_missing_version(auth_client):
+    created = auth_client.post("/flats", json=COMPLIANT_LAYOUT).json()
     flat_id = created["flat_id"]
-    resp = client.get(f"/flats/{flat_id}/versions/99")
+    resp = auth_client.get(f"/flats/{flat_id}/versions/99")
     assert resp.status_code == 404
 
 
-def test_list_flats_reflects_latest_version_score(client):
-    created = client.post("/flats", json=COMPLIANT_LAYOUT).json()
+def test_list_flats_reflects_latest_version_score(auth_client):
+    created = auth_client.post("/flats", json=COMPLIANT_LAYOUT).json()
     flat_id = created["flat_id"]
-    client.post(f"/flats/{flat_id}/versions", json={
+    auth_client.post(f"/flats/{flat_id}/versions", json={
         "plot": {"shape": "rectangle"},
         "rooms": [{"name": "Kitchen", "zone": "NE"}],
     })
 
-    resp = client.get("/flats")
+    resp = auth_client.get("/flats")
     assert resp.status_code == 200
     flats = resp.json()
     assert len(flats) == 1
@@ -109,28 +212,27 @@ def test_list_flats_reflects_latest_version_score(client):
     assert flats[0]["latest_major_count"] == 1
 
 
-def test_delete_flat_removes_it(client):
-    created = client.post("/flats", json=COMPLIANT_LAYOUT).json()
+def test_delete_flat_removes_it(auth_client):
+    created = auth_client.post("/flats", json=COMPLIANT_LAYOUT).json()
     flat_id = created["flat_id"]
 
-    resp = client.delete(f"/flats/{flat_id}")
+    resp = auth_client.delete(f"/flats/{flat_id}")
     assert resp.status_code == 200
-    assert client.get(f"/flats/{flat_id}").status_code == 404
+    assert auth_client.get(f"/flats/{flat_id}").status_code == 404
 
 
-def test_delete_flat_404_for_missing_flat(client):
-    resp = client.delete("/flats/999")
+def test_delete_flat_404_for_missing_flat(auth_client):
+    resp = auth_client.delete("/flats/999")
     assert resp.status_code == 404
 
 
-def test_stateless_audit_endpoint_still_works_and_saves_nothing(client):
+def test_stateless_audit_endpoint_works_without_login_and_saves_nothing(client):
     resp = client.post("/audit", json={"plot": {}, "rooms": []})
     assert resp.status_code == 200
     assert resp.json()["compliance_score"] == 100
-    assert client.get("/flats").json() == []
 
 
-def test_schema_info_endpoint_unaffected_by_persistence_changes(client):
+def test_schema_info_endpoint_works_without_login(client):
     resp = client.get("/schema-info")
     assert resp.status_code == 200
     assert "room_types" in resp.json()
@@ -142,7 +244,6 @@ def test_schema_info_endpoint_unaffected_by_persistence_changes(client):
 
 LAYOUT_WITH_POLYGON = {
     "label": "Unit 12",
-    "owner": "vikas",
     "plot": {"shape": "rectangle"},
     "rooms": [{
         "name": "MasterBedroom",
@@ -168,19 +269,19 @@ def test_audit_endpoint_has_empty_suggestions_when_no_polygons(client):
     assert resp.json()["suggestions"] == []
 
 
-def test_create_flat_saves_and_returns_suggestions(client):
-    resp = client.post("/flats", json=LAYOUT_WITH_POLYGON)
+def test_create_flat_saves_and_returns_suggestions(auth_client):
+    resp = auth_client.post("/flats", json=LAYOUT_WITH_POLYGON)
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["result"]["suggestions"]) == 1
     assert body["input"]["facade_bearing_deg"] == 0.0
 
 
-def test_saved_flat_round_trips_facade_bearing_and_polygon(client):
-    created = client.post("/flats", json=LAYOUT_WITH_POLYGON).json()
+def test_saved_flat_round_trips_facade_bearing_and_polygon(auth_client):
+    created = auth_client.post("/flats", json=LAYOUT_WITH_POLYGON).json()
     flat_id = created["flat_id"]
 
-    flat = client.get(f"/flats/{flat_id}").json()
+    flat = auth_client.get(f"/flats/{flat_id}").json()
     saved_input = flat["versions"][0]["input"]
     assert saved_input["facade_bearing_deg"] == 0.0
     assert saved_input["rooms"][0]["polygon"] == [[0, 0], [12, 0], [12, 14], [0, 14]]

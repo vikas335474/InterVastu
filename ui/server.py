@@ -7,16 +7,24 @@ own audit_layout() directly. All audit logic, scoring, and remedy text come
 from genesis/engine/vastu_audit.py and vastu_rule_schema.json, unmodified.
 
 Persistence model (see storage.py for the schema/rationale): a "flat" is a
-named, owned record; each save/edit creates a new numbered "version" rather
-than overwriting the previous one, so a user can tweak a room polygon,
-re-audit, and compare the new result against every prior version.
+named record OWNED BY an authenticated user; each save/edit creates a new
+numbered "version" rather than overwriting the previous one, so a user can
+tweak a room polygon, re-audit, and compare the new result against every
+prior version.
+
+Auth model (see auth.py for the crypto/session rationale): username +
+bcrypt-hashed password, server-side session stored in storage.sessions and
+referenced by an httponly cookie. All /flats* endpoints require a valid
+session and are scoped to that session's user — a user can only see, edit,
+or delete their own flats. The stateless /audit endpoint (nothing saved)
+remains open with no login required, for quick one-off checks.
 """
 
 import os
 import sys
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 import uvicorn
 
@@ -32,6 +40,7 @@ import zone_geometry as zg  # noqa: E402
 import ritual_protocol  # noqa: E402
 import storage  # noqa: E402
 import suggestions  # noqa: E402
+import auth  # noqa: E402
 
 SCHEMA_PATH = ENGINE_DIR / "vastu_rule_schema.json"
 SCHEMA = load_schema(SCHEMA_PATH)
@@ -39,6 +48,11 @@ SCHEMA = load_schema(SCHEMA_PATH)
 # Overridable so tests (and a future deploy config) can point at a
 # different SQLite file without touching the real one.
 DB_PATH = os.environ.get("VASTU_UI_DB_PATH", str(storage.DEFAULT_DB_PATH))
+
+# Cookies are marked Secure (HTTPS-only) unless explicitly disabled, e.g.
+# for local http://127.0.0.1 development. Set VASTU_UI_INSECURE_COOKIES=1
+# to run over plain HTTP locally; never set it in a real deployment.
+COOKIE_SECURE = os.environ.get("VASTU_UI_INSECURE_COOKIES") != "1"
 
 app = FastAPI(title="Vastu Audit Engine — Local Test UI")
 
@@ -71,6 +85,13 @@ def require_admin(x_admin_token: str | None = Header(None)):
     proportionate to "one or a few trusted admins," the same scale
     assumption storage.py's own README already states for the rest of this
     app; revisit if that assumption stops holding.
+
+    Deliberately independent of get_current_user below: project approval is
+    gated by a shared operator secret, not by a per-user session, even
+    though real user accounts now exist elsewhere in this app (see that
+    function's docstring) — conflating the two would mean any registered
+    user could be made an "admin" by a config change never designed for
+    that, rather than the admin token remaining a separate, narrower gate.
     """
     configured_token = os.environ.get("VASTU_ADMIN_TOKEN")
     if not configured_token:
@@ -80,6 +101,25 @@ def require_admin(x_admin_token: str | None = Header(None)):
         )
     if x_admin_token != configured_token:
         raise HTTPException(status_code=403, detail="Invalid or missing admin token.")
+
+
+def get_current_user(
+    conn=Depends(get_conn),
+    session_token: str | None = Cookie(default=None, alias=auth.SESSION_COOKIE_NAME),
+) -> dict:
+    """FastAPI dependency: the authenticated user for this request, or 401.
+
+    Every /flats* endpoint depends on this so persistence is never
+    reachable without a valid session — there is no "trust a client-
+    supplied owner string" path anymore (see storage.py's module docstring
+    for why that used to be the case and why it changed).
+    """
+    if not session_token:
+        raise HTTPException(status_code=401, detail="not logged in")
+    user = storage.get_session_user(conn, session_token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="session expired or invalid")
+    return user
 
 
 def _run_audit(payload: dict) -> tuple[dict, dict]:
@@ -191,66 +231,136 @@ def schema_info():
 
 @app.post("/audit")
 def audit(layout: dict):
-    """Stateless one-off audit — nothing is saved. Kept for quick checks
-    that don't belong to a named flat. Includes placement suggestions (see
-    _run_audit) for any room that supplied a polygon and a supported type."""
+    """Stateless one-off audit — nothing is saved, no login required.
+    Kept for quick checks that don't belong to a named flat. Includes
+    placement suggestions (see _run_audit) for any room that supplied a
+    polygon and a supported type."""
     _, result = _run_audit(layout)
     return result
 
 
 # ---------------------------------------------------------------------------
-# Persistence: flats + versions
+# Auth: register / login / logout / me
+# ---------------------------------------------------------------------------
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=auth.SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+        max_age=60 * 60 * 24 * 30,  # 30 days
+        path="/",
+    )
+
+
+@app.post("/auth/register")
+def register(payload: dict, response: Response, conn=Depends(get_conn)):
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+
+    error = auth.validate_username(username) or auth.validate_password(password)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    try:
+        user_id = storage.create_user(conn, username, auth.hash_password(password))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    token = auth.generate_session_token()
+    storage.create_session(conn, user_id, token)
+    _set_session_cookie(response, token)
+    return {"id": user_id, "username": username}
+
+
+@app.post("/auth/login")
+def login(payload: dict, response: Response, conn=Depends(get_conn)):
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+
+    user = storage.get_user_by_username(conn, username)
+    if user is None or not auth.verify_password(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="invalid username or password")
+
+    token = auth.generate_session_token()
+    storage.create_session(conn, user["id"], token)
+    _set_session_cookie(response, token)
+    return {"id": user["id"], "username": user["username"]}
+
+
+@app.post("/auth/logout")
+def logout(
+    response: Response,
+    conn=Depends(get_conn),
+    session_token: str | None = Cookie(default=None, alias=auth.SESSION_COOKIE_NAME),
+):
+    if session_token:
+        storage.delete_session(conn, session_token)
+    response.delete_cookie(auth.SESSION_COOKIE_NAME, path="/")
+    return {"logged_out": True}
+
+
+@app.get("/auth/me")
+def me(user=Depends(get_current_user)):
+    return {"id": user["id"], "username": user["username"]}
+
+
+# ---------------------------------------------------------------------------
+# Persistence: flats + versions -- all require a logged-in user
 # ---------------------------------------------------------------------------
 
 @app.post("/flats")
-def create_flat(payload: dict, conn=Depends(get_conn)):
-    """Create a new flat and save its first audit run as version 1."""
+def create_flat(payload: dict, conn=Depends(get_conn), user=Depends(get_current_user)):
+    """Create a new flat, owned by the logged-in user, and save its first
+    audit run as version 1."""
     label = (payload.get("label") or "").strip()
-    owner = (payload.get("owner") or "").strip()
-    if not label or not owner:
-        raise HTTPException(status_code=400, detail="label and owner are both required")
+    if not label:
+        raise HTTPException(status_code=400, detail="label is required")
 
     input_data, result = _run_audit(payload)
-    flat_id = storage.create_flat(conn, label, owner, input_data, result, note=payload.get("note"))
+    flat_id = storage.create_flat(conn, label, user["id"], input_data, result, note=payload.get("note"))
     return {"flat_id": flat_id, "version": 1, "input": input_data, "result": result}
 
 
 @app.get("/flats")
-def list_flats(conn=Depends(get_conn)):
-    return storage.list_flats(conn)
+def list_flats(conn=Depends(get_conn), user=Depends(get_current_user)):
+    return storage.list_flats(conn, user["id"])
 
 
 @app.get("/flats/{flat_id}")
-def get_flat(flat_id: int, conn=Depends(get_conn)):
-    flat = storage.get_flat(conn, flat_id)
+def get_flat(flat_id: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+    flat = storage.get_flat(conn, flat_id, user["id"])
     if flat is None:
         raise HTTPException(status_code=404, detail="flat not found")
     return flat
 
 
 @app.post("/flats/{flat_id}/versions")
-def add_flat_version(flat_id: int, payload: dict, conn=Depends(get_conn)):
-    """Save an edited layout as a new version of an existing flat and
-    re-audit it, so the new result can be compared against prior versions."""
+def add_flat_version(flat_id: int, payload: dict, conn=Depends(get_conn), user=Depends(get_current_user)):
+    """Save an edited layout as a new version of an existing flat (must be
+    owned by the logged-in user) and re-audit it, so the new result can be
+    compared against prior versions."""
     input_data, result = _run_audit(payload)
     try:
-        version = storage.add_version(conn, flat_id, input_data, result, note=payload.get("note"))
+        version = storage.add_version(conn, flat_id, user["id"], input_data, result, note=payload.get("note"))
     except ValueError:
         raise HTTPException(status_code=404, detail="flat not found")
     return {"flat_id": flat_id, "version": version, "input": input_data, "result": result}
 
 
 @app.get("/flats/{flat_id}/versions/{version_number}")
-def get_flat_version(flat_id: int, version_number: int, conn=Depends(get_conn)):
-    version = storage.get_version(conn, flat_id, version_number)
+def get_flat_version(flat_id: int, version_number: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+    version = storage.get_version(conn, flat_id, user["id"], version_number)
     if version is None:
         raise HTTPException(status_code=404, detail="version not found")
     return version
 
 
 @app.delete("/flats/{flat_id}")
-def delete_flat(flat_id: int, conn=Depends(get_conn)):
-    if not storage.delete_flat(conn, flat_id):
+def delete_flat(flat_id: int, conn=Depends(get_conn), user=Depends(get_current_user)):
+    if not storage.delete_flat(conn, flat_id, user["id"]):
         raise HTTPException(status_code=404, detail="flat not found")
     return {"deleted": True}
 
