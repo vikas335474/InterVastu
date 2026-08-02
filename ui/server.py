@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 import uvicorn
 
@@ -55,6 +55,31 @@ def get_conn():
         yield conn
     finally:
         conn.close()
+
+
+def require_admin(x_admin_token: str | None = Header(None)):
+    """Gate for actions affecting SHARED project data (many unrelated flat
+    owners' audits depend on it, unlike a flat which only affects its own
+    owner) — see storage.py's module docstring for why project_versions can
+    only be written via an approved proposal, and why approval itself needs
+    a real gate instead of the rest of this app's no-auth stance.
+
+    Deliberately FAILS CLOSED: if VASTU_ADMIN_TOKEN isn't set on the server
+    at all, admin endpoints refuse every request (503) rather than silently
+    accepting any/no token (which an unset env var would otherwise look
+    like). This is a single shared-secret gate, not a user-account system —
+    proportionate to "one or a few trusted admins," the same scale
+    assumption storage.py's own README already states for the rest of this
+    app; revisit if that assumption stops holding.
+    """
+    configured_token = os.environ.get("VASTU_ADMIN_TOKEN")
+    if not configured_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin functionality is not configured on this server (VASTU_ADMIN_TOKEN is unset).",
+        )
+    if x_admin_token != configured_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing admin token.")
 
 
 def _run_audit(payload: dict) -> tuple[dict, dict]:
@@ -124,6 +149,16 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
 @app.get("/")
 def index():
     return FileResponse(UI_DIR / "index.html")
+
+
+@app.get("/admin")
+def admin_page():
+    """Serves the admin review UI. The page itself is static HTML/JS — it
+    prompts for the admin token client-side and sends it as a header on
+    every request; the actual gate is require_admin() on each endpoint
+    below, not this route (serving the page's HTML is not sensitive, since
+    it does nothing without a valid token)."""
+    return FileResponse(UI_DIR / "admin.html")
 
 
 @app.get("/schema-info")
@@ -218,6 +253,123 @@ def delete_flat(flat_id: int, conn=Depends(get_conn)):
     if not storage.delete_flat(conn, flat_id):
         raise HTTPException(status_code=404, detail="flat not found")
     return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# Projects: shared building-level data, reused across many flat owners.
+# See storage.py's module docstring for the submit -> approve/reject model.
+#
+# Route order matters here: FastAPI/Starlette matches routes in registration
+# order, and "/projects/proposals" would otherwise be swallowed by the
+# earlier, more general "/projects/{project_id}" (which would try to parse
+# "proposals" as an int and 422). All literal "/projects/proposals..."
+# routes are therefore registered BEFORE the "/projects/{project_id}..."
+# routes below them.
+# ---------------------------------------------------------------------------
+
+@app.post("/projects/proposals")
+def submit_project_proposal(payload: dict, conn=Depends(get_conn)):
+    """Public — anyone can propose a brand-new project (omit project_id) or
+    a correction/update to an existing one (set project_id). Takes effect on
+    nothing until an admin approves it; see storage.submit_project_proposal.
+    """
+    submitted_by = (payload.get("submitted_by") or "").strip()
+    if not submitted_by:
+        raise HTTPException(status_code=400, detail="submitted_by is required")
+
+    try:
+        proposal_id = storage.submit_project_proposal(
+            conn,
+            submitted_by,
+            project_id=payload.get("project_id"),
+            proposed_name=payload.get("proposed_name"),
+            proposed_rera_reference=payload.get("proposed_rera_reference"),
+            proposed_builder=payload.get("proposed_builder"),
+            proposed_address=payload.get("proposed_address"),
+            proposed_boundary=payload.get("proposed_boundary"),
+            proposed_facade_bearing_deg=payload.get("proposed_facade_bearing_deg"),
+            proposed_base_rooms=payload.get("proposed_base_rooms"),
+            note=payload.get("note"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"proposal_id": proposal_id, "status": "pending"}
+
+
+@app.get("/projects/proposals")
+def list_project_proposals(
+    status: str | None = None, conn=Depends(get_conn), _admin=Depends(require_admin)
+):
+    """Admin-only — this is the review queue. Listing every proposal
+    (including who submitted what) is reserved to an admin even though a
+    single proposal by id (below) is public."""
+    return storage.list_project_proposals(conn, status=status)
+
+
+@app.post("/projects/proposals/{proposal_id}/approve")
+def approve_project_proposal(
+    proposal_id: int, payload: dict | None = None, conn=Depends(get_conn), _admin=Depends(require_admin)
+):
+    """Admin-only. Accepting a proposal as-is is the only path in v1 — an
+    admin who wants different data submits their own corrective proposal
+    and approves that instead, rather than editing someone else's proposal
+    in place (keeps exactly one code path for "how project data changes,"
+    per storage.py's module docstring)."""
+    reviewed_note = (payload or {}).get("reviewed_note")
+    try:
+        result = storage.approve_project_proposal(conn, proposal_id, reviewed_note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result
+
+
+@app.post("/projects/proposals/{proposal_id}/reject")
+def reject_project_proposal(
+    proposal_id: int, payload: dict | None = None, conn=Depends(get_conn), _admin=Depends(require_admin)
+):
+    """Admin-only. The proposal row is kept (status='rejected'), not deleted."""
+    reviewed_note = (payload or {}).get("reviewed_note")
+    try:
+        storage.reject_project_proposal(conn, proposal_id, reviewed_note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"proposal_id": proposal_id, "status": "rejected"}
+
+
+@app.get("/projects/proposals/{proposal_id}")
+def get_project_proposal(proposal_id: int, conn=Depends(get_conn)):
+    """Public by design — a submitter gets this id back from the POST above
+    and can use it to check their own proposal's status. Proposal content
+    isn't sensitive (it's the same kind of data a project version would
+    publish anyway once approved)."""
+    proposal = storage.get_project_proposal(conn, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    return proposal
+
+
+@app.get("/projects")
+def list_projects(conn=Depends(get_conn)):
+    """Public — anyone can browse projects to attach their flat to."""
+    return storage.list_projects(conn)
+
+
+@app.get("/projects/{project_id}")
+def get_project(project_id: int, conn=Depends(get_conn)):
+    """Public — full version history of one project, so a flat owner can see
+    what a project's confirmed geometry looked like at any point."""
+    project = storage.get_project(conn, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return project
+
+
+@app.get("/projects/{project_id}/versions/{version_number}")
+def get_project_version(project_id: int, version_number: int, conn=Depends(get_conn)):
+    version = storage.get_project_version(conn, project_id, version_number)
+    if version is None:
+        raise HTTPException(status_code=404, detail="project version not found")
+    return version
 
 
 if __name__ == "__main__":

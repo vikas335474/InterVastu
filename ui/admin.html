@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vastu Audit Engine — Admin: Project Review</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; }
+  fieldset { margin-bottom: 1.5rem; }
+  .muted { color: #777; font-size: 0.85rem; }
+  button { cursor: pointer; padding: 0.35rem 0.8rem; }
+  #token-status { font-size: 0.85rem; margin-left: 0.5rem; }
+  .proposal-card { border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem 1rem; margin-bottom: 1rem; background: #fafafa; }
+  .proposal-card.new-project { border-left: 4px solid #2e5aac; }
+  .proposal-card.edit-project { border-left: 4px solid #8e24aa; }
+  .proposal-meta { font-size: 0.85rem; color: #555; margin-bottom: 0.4rem; }
+  .proposal-card pre { background: #fff; border: 1px solid #eee; padding: 0.5rem; font-size: 0.78rem; overflow-x: auto; max-height: 10rem; }
+  .proposal-actions { margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .proposal-actions input[type=text] { flex: 1; min-width: 12rem; padding: 0.3rem; }
+  .approve-btn { background: #2e7d32; color: #fff; border: none; border-radius: 3px; padding: 0.35rem 0.8rem; }
+  .reject-btn { background: #c0392b; color: #fff; border: none; border-radius: 3px; padding: 0.35rem 0.8rem; }
+  .status-badge { font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 3px; }
+  .status-badge.pending { background: #fef5e7; color: #d68910; }
+  .status-badge.approved { background: #eef7ee; color: #2e7d32; }
+  .status-badge.rejected { background: #fdecea; color: #c0392b; }
+  .project-row { display: flex; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+  .project-row .meta { color: #777; flex: 1; }
+</style>
+</head>
+<body>
+
+<h1>Vastu Audit Engine — Admin: Project Review</h1>
+<p class="muted">
+  Reviews suggested building/project data (submitted from the main audit
+  page) before it goes live for every flat owner attached to that project.
+  See <code>storage.py</code>'s module docstring for the full submit →
+  approve/reject model.
+</p>
+
+<fieldset>
+  <legend>Admin token</legend>
+  <label>Token: <input type="password" id="admin-token" placeholder="paste your VASTU_ADMIN_TOKEN"></label>
+  <button type="button" id="save-token-btn">Save (this browser only)</button>
+  <button type="button" id="forget-token-btn">Forget</button>
+  <span id="token-status" class="muted"></span>
+  <p class="muted">
+    Stored only in this browser's local storage, never sent anywhere except
+    as the <code>X-Admin-Token</code> header on requests from this page.
+    Matches whatever <code>VASTU_ADMIN_TOKEN</code> is configured on the
+    server — there is no separate admin login/account system.
+  </p>
+</fieldset>
+
+<fieldset>
+  <legend>Pending proposals</legend>
+  <button type="button" id="refresh-pending-btn">Refresh</button>
+  <span id="pending-status" class="muted"></span>
+  <div id="pending-list"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Live projects (reference — no token needed to view)</legend>
+  <button type="button" id="refresh-projects-btn">Refresh</button>
+  <div id="projects-list" class="muted">Not loaded yet.</div>
+</fieldset>
+
+<fieldset>
+  <legend>All proposals (any status)</legend>
+  <button type="button" id="refresh-all-btn">Load</button>
+  <div id="all-proposals-list"></div>
+</fieldset>
+
+<script>
+const TOKEN_KEY = 'vastu_admin_token';
+
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY) || '';
+}
+
+function adminHeaders() {
+  return { 'Content-Type': 'application/json', 'X-Admin-Token': getToken() };
+}
+
+document.getElementById('admin-token').value = getToken();
+
+document.getElementById('save-token-btn').addEventListener('click', () => {
+  localStorage.setItem(TOKEN_KEY, document.getElementById('admin-token').value.trim());
+  document.getElementById('token-status').textContent = 'Saved.';
+  refreshPending();
+});
+document.getElementById('forget-token-btn').addEventListener('click', () => {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById('admin-token').value = '';
+  document.getElementById('token-status').textContent = 'Forgotten.';
+});
+
+function proposalCard(p) {
+  const isNew = p.project_id === null;
+  const kindClass = isNew ? 'new-project' : 'edit-project';
+  const kindLabel = isNew ? 'NEW PROJECT' : `EDIT of project #${p.project_id}`;
+  const fields = [];
+  if (isNew) {
+    fields.push(['Proposed name', p.proposed_name]);
+    fields.push(['RERA reference', p.proposed_rera_reference]);
+    fields.push(['Builder', p.proposed_builder]);
+    fields.push(['Address', p.proposed_address]);
+  }
+  fields.push(['Facade bearing (deg)', p.proposed_facade_bearing_deg]);
+
+  const fieldsHtml = fields
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([label, v]) => `<div><strong>${label}:</strong> ${v}</div>`).join('');
+
+  const actionsHtml = p.status === 'pending' ? `
+    <div class="proposal-actions">
+      <input type="text" class="reviewed-note" placeholder="Reason / note (optional)">
+      <button type="button" class="approve-btn" data-id="${p.id}">Approve</button>
+      <button type="button" class="reject-btn" data-id="${p.id}">Reject</button>
+    </div>` : `<div class="muted">Reviewed ${p.reviewed_at || ''}${p.reviewed_note ? ' — ' + p.reviewed_note : ''}</div>`;
+
+  return `
+    <div class="proposal-card ${kindClass}" data-proposal-id="${p.id}">
+      <div class="proposal-meta">
+        #${p.id} · ${kindLabel} · submitted by <strong>${p.submitted_by}</strong> · ${p.created_at}
+        <span class="status-badge ${p.status}">${p.status}</span>
+      </div>
+      ${fieldsHtml}
+      ${p.note ? `<div><strong>Submitter's note:</strong> ${p.note}</div>` : ''}
+      ${p.proposed_boundary ? `<details><summary>Boundary polygon (${p.proposed_boundary.length} pts)</summary><pre>${JSON.stringify(p.proposed_boundary)}</pre></details>` : ''}
+      ${p.proposed_base_rooms && p.proposed_base_rooms.length ? `<details><summary>Base rooms (${p.proposed_base_rooms.length})</summary><pre>${JSON.stringify(p.proposed_base_rooms, null, 2)}</pre></details>` : ''}
+      ${actionsHtml}
+    </div>`;
+}
+
+function wireProposalActions(container) {
+  container.querySelectorAll('.approve-btn').forEach(btn => {
+    btn.addEventListener('click', () => reviewProposal(btn.dataset.id, 'approve', btn));
+  });
+  container.querySelectorAll('.reject-btn').forEach(btn => {
+    btn.addEventListener('click', () => reviewProposal(btn.dataset.id, 'reject', btn));
+  });
+}
+
+async function reviewProposal(id, action, btn) {
+  const card = btn.closest('.proposal-card');
+  const note = card.querySelector('.reviewed-note').value.trim() || null;
+  const resp = await fetch(`/projects/proposals/${id}/${action}`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify({ reviewed_note: note }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    alert(`${action} failed (${resp.status}): ${body.detail || 'unknown error'}`);
+    return;
+  }
+  refreshPending();
+  refreshProjects();
+}
+
+async function refreshPending() {
+  const statusEl = document.getElementById('pending-status');
+  const listEl = document.getElementById('pending-list');
+  if (!getToken()) {
+    statusEl.textContent = 'Enter and save your admin token above first.';
+    listEl.innerHTML = '';
+    return;
+  }
+  const resp = await fetch('/projects/proposals?status=pending', { headers: adminHeaders(), cache: 'no-store' });
+  if (resp.status === 503) {
+    statusEl.textContent = 'Server has no VASTU_ADMIN_TOKEN configured — admin features are disabled.';
+    listEl.innerHTML = '';
+    return;
+  }
+  if (resp.status === 403) {
+    statusEl.textContent = 'Invalid token.';
+    listEl.innerHTML = '';
+    return;
+  }
+  const proposals = await resp.json();
+  statusEl.textContent = `${proposals.length} pending.`;
+  listEl.innerHTML = proposals.length
+    ? proposals.map(proposalCard).join('')
+    : '<p class="muted">Nothing pending.</p>';
+  wireProposalActions(listEl);
+}
+
+async function refreshProjects() {
+  const resp = await fetch('/projects', { cache: 'no-store' });
+  const projects = await resp.json();
+  const el = document.getElementById('projects-list');
+  el.innerHTML = projects.length
+    ? projects.map(p => `
+        <div class="project-row">
+          <strong>${p.name}</strong>
+          <span class="meta">v${p.latest_version} · ${p.rera_reference || 'no RERA ref on record'} · ${p.builder || ''}</span>
+        </div>`).join('')
+    : '<p class="muted">No live projects yet.</p>';
+}
+
+async function refreshAllProposals() {
+  const listEl = document.getElementById('all-proposals-list');
+  if (!getToken()) {
+    listEl.innerHTML = '<p class="muted">Enter and save your admin token above first.</p>';
+    return;
+  }
+  const resp = await fetch('/projects/proposals', { headers: adminHeaders(), cache: 'no-store' });
+  if (!resp.ok) {
+    listEl.innerHTML = '<p class="muted">Could not load (check token).</p>';
+    return;
+  }
+  const proposals = await resp.json();
+  listEl.innerHTML = proposals.length
+    ? proposals.map(proposalCard).join('')
+    : '<p class="muted">No proposals at all yet.</p>';
+  wireProposalActions(listEl);
+}
+
+document.getElementById('refresh-pending-btn').addEventListener('click', refreshPending);
+document.getElementById('refresh-projects-btn').addEventListener('click', refreshProjects);
+document.getElementById('refresh-all-btn').addEventListener('click', refreshAllProposals);
+
+refreshPending();
+refreshProjects();
+</script>
+
+</body>
+</html>

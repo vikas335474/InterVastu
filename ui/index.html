@@ -36,6 +36,31 @@
   .suggestion { border-left: 4px solid #2e7d32; background: #eef7ee; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
   .suggestion.compromise { border-color: #d68910; background: #fef5e7; }
   .suggestion-error { border-left: 4px solid #999; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; color: #555; }
+  #boundary-wrap textarea { width: 100%; max-width: 600px; height: 3rem; font-family: monospace; font-size: 0.8rem; }
+  .shape-panel { background: #f4f7fb; border: 1px solid #d6e0ee; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.9rem; }
+  .shape-panel .flag-bad { color: #c0392b; font-weight: bold; }
+  .shape-panel .flag-ok { color: #2e7d32; }
+  .shape-panel table { border-collapse: collapse; margin-top: 0.4rem; }
+  .shape-panel td { padding: 0.15rem 0.6rem 0.15rem 0; }
+  .ritual-details { margin-top: 0.4rem; font-size: 0.85rem; }
+  .ritual-details summary { cursor: pointer; color: #6a4c93; font-weight: 600; }
+  .ritual-box { background: #f7f2fb; border-left: 4px solid #6a4c93; padding: 0.5rem 0.75rem; margin-top: 0.35rem; }
+  .ritual-box .disclaimer { color: #777; font-style: italic; margin-top: 0.35rem; }
+  .trace-steps { font-size: 0.9rem; margin: 0.5rem 0; padding-left: 1.3rem; }
+  .trace-status { background: #eef2f8; border-left: 4px solid #4a6fa5; padding: 0.5rem 0.75rem; margin: 0.6rem 0; font-size: 0.9rem; }
+  #trace-canvas { border: 1px solid #bbb; touch-action: none; max-width: 100%; display: block; margin: 0.5rem 0; }
+  #trace-canvas.mode-active { cursor: crosshair; }
+  .trace-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
+  .trace-controls button { font-size: 0.85rem; }
+  .trace-controls button.primary { background: #2e5aac; color: #fff; border: none; border-radius: 3px; padding: 0.4rem 0.8rem; }
+  .trace-legend { font-size: 0.85rem; margin-top: 0.5rem; }
+  .trace-legend .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+  .trace-legend .swatch { width: 0.8rem; height: 0.8rem; display: inline-block; border-radius: 2px; }
+  .trace-legend .legend-remove { font-size: 0.75rem; padding: 0.1rem 0.5rem; }
+  .compass-wrap { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+  .compass-dial { width: 84px; height: 84px; border-radius: 50%; border: 2px solid #888; position: relative; cursor: grab; background: #fff; flex-shrink: 0; }
+  .compass-dial .n-label { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: #888; font-weight: bold; }
+  .compass-needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 34px; background: #c0392b; transform-origin: bottom center; transform: translate(-50%, -100%) rotate(0deg); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -47,6 +72,99 @@
   <legend>Saved flats</legend>
   <label>Your name/owner label: <input type="text" id="owner-name" placeholder="e.g. vikas"></label>
   <div id="flats-list" class="muted">Loading…</div>
+</fieldset>
+
+<fieldset>
+  <legend>Your building / project</legend>
+  <p class="muted">
+    If your building already has a confirmed plan on record (e.g. sourced
+    from a RERA filing or a previous resident), load it here and skip
+    tracing entirely. If it's not listed, trace or enter your flat below as
+    usual — then optionally suggest what you traced so future owners in your
+    building don't have to redo this work. Suggestions are reviewed by an
+    admin before they go live for anyone else.
+  </p>
+  <label>Building/project: <select id="project-select"><option value="">-- none / not listed --</option></select></label>
+  <button type="button" id="load-project-btn" disabled>Load this project's base plan</button>
+  <div id="project-detail" class="muted"></div>
+
+  <div style="margin-top:0.75rem;">
+    <button type="button" id="propose-project-btn">Suggest this building's data (new project, or a correction)</button>
+  </div>
+  <div id="propose-project-form" style="display:none; margin-top:0.5rem;">
+    <p class="muted">
+      Sends the boundary/rooms/facade-bearing currently in the fields below
+      (from tracing or manual entry) as a suggestion — nothing changes for
+      anyone else until an admin reviews and approves it.
+    </p>
+    <label>Your name/label: <input type="text" id="proposal-submitted-by" placeholder="e.g. vikas"></label><br>
+    <p class="muted" id="proposal-mode-note"></p>
+    <span id="proposal-new-fields">
+      <label>Project/building name: <input type="text" id="proposal-project-name" placeholder="e.g. Skyline Towers, Phase 2"></label><br>
+      <label>RERA reference (optional): <input type="text" id="proposal-rera" placeholder="e.g. RERA/MH/12345 or a link"></label><br>
+      <label>Builder (optional): <input type="text" id="proposal-builder"></label><br>
+      <label>Address (optional): <input type="text" id="proposal-address"></label><br>
+    </span>
+    <label>Note (what this is based on): <textarea id="proposal-note" style="width:100%; max-width:480px; height:2.5rem;"></textarea></label><br>
+    <button type="button" id="submit-proposal-btn">Submit suggestion</button>
+    <span id="proposal-status" class="muted"></span>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Trace your floor plan (recommended)</legend>
+  <p class="muted">
+    Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
+    the coordinates the engine needs, with no typing of raw numbers required.
+    <strong>Nothing here auto-detects walls or rooms</strong> — you click where
+    they are, this tool only measures distances and angles from your clicks.
+    Everything it fills in stays visible in the Plot/Rooms fields below, so you
+    can always check or hand-edit it.
+  </p>
+  <ol class="trace-steps">
+    <li>Optional: upload a photo of your floor plan (skip this to trace on a plain grid instead).</li>
+    <li>If you uploaded a photo: set the scale — click two points a known real-world distance apart (e.g. a door), then type that distance.</li>
+    <li>Trace the flat's outer boundary.</li>
+    <li>Trace each room, one at a time (repeat as needed).</li>
+    <li>Set which way is North using the dial.</li>
+  </ol>
+
+  <label>Floor plan photo (optional): <input type="file" id="plan-image-input" accept="image/*"></label>
+  <button type="button" id="clear-image-btn" style="display:none;">Remove photo, use plain grid</button>
+  <span id="grid-scale-wrap">
+    &nbsp;|&nbsp;
+    <label>Grid scale (only used without a photo): each square = <input type="number" id="grid-feet-per-square" value="1" min="0.1" step="0.1" style="width:3.5rem;"> ft</label>
+  </span>
+
+  <div id="trace-status" class="trace-status">Trace directly on the grid below, or upload a floor plan photo first.</div>
+  <div id="calibration-badge" class="trace-status" style="display:none; border-color:#d68910; background:#fef5e7;"></div>
+
+  <canvas id="trace-canvas" width="720" height="480"></canvas>
+
+  <div class="trace-controls">
+    <button type="button" id="calibrate-btn" style="display:none;">Set scale (click 2 points)</button>
+    <button type="button" id="trace-boundary-btn" class="primary">Trace flat boundary</button>
+    <select id="trace-room-type"></select>
+    <button type="button" id="trace-room-btn" class="primary">Trace this room</button>
+    <button type="button" id="undo-point-btn">Undo last point</button>
+    <button type="button" id="finish-shape-btn" style="display:none;">Finish shape</button>
+    <button type="button" id="cancel-shape-btn" style="display:none;">Cancel</button>
+    <button type="button" id="reset-trace-btn">Reset tracing</button>
+  </div>
+
+  <div class="compass-wrap">
+    <div>
+      <strong>North direction</strong><br>
+      <span class="muted">Drag the needle to match your plan's North arrow or a compass reading. Leave it pointing up if the image's "up" is already North.</span>
+    </div>
+    <div class="compass-dial" id="compass-dial">
+      <span class="n-label">N</span>
+      <div class="compass-needle" id="compass-needle"></div>
+    </div>
+    <span id="compass-readout" class="muted">0.0° (facing image-up)</span>
+  </div>
+
+  <div id="trace-legend" class="trace-legend"></div>
 </fieldset>
 
 <fieldset>
@@ -67,6 +185,29 @@
     <input type="number" id="facade-bearing" value="0" step="0.1" style="width:5rem;">
   </label>
   <span class="muted">Only affects rooms with a polygon entered (see below).</span>
+  <br><br>
+  <div id="boundary-wrap">
+    <label>Flat boundary polygon (JSON [[x,y],...] ft, optional):</label><br>
+    <textarea id="plot-boundary" placeholder="e.g. [[0,0],[40,0],[40,27],[27,27],[27,41],[0,41]] — the L-shape / U-shape / whole outer wall trace"></textarea>
+    <p class="muted">
+      When supplied, this runs the geometric shape diagnosis: the true area
+      centroid vs. the bounding-box centre, a check for a hollow/external
+      centre (e.g. U-shaped flats), and detection of cut/missing compass
+      zones (e.g. a missing NE corner). Uses the facade bearing above as
+      the plan's north offset. Leave blank to skip — the rest of the audit
+      is unaffected either way.
+    </p>
+  </div>
+  <label>
+    <input type="checkbox" id="include-ritual">
+    Include traditional ritual/activation protocol with remedies
+  </label>
+  <p class="muted">
+    Optional. Adds the classical directional deity, mantra, and Prana
+    Pratishtha activation sequence alongside any hollow-centre / missing-zone
+    remedy. This is religious/cultural content, not a validated intervention
+    — off by default, shown only if you ask for it.
+  </p>
 </fieldset>
 
 <fieldset>
@@ -114,12 +255,13 @@ const DEFAULT_DIMENSIONS = {
 };
 
 async function loadSchemaInfo() {
-  const resp = await fetch('/schema-info');
+  const resp = await fetch('/schema-info', { cache: 'no-store' });
   schemaInfo = await resp.json();
 
   const shapeSelect = document.getElementById('plot-shape');
   const shapes = [...schemaInfo.plot_shapes.preferred, ...schemaInfo.plot_shapes.forbidden];
   shapeSelect.innerHTML = shapes.map(s => `<option value="${s}">${s}</option>`).join('');
+  populateTraceRoomTypes();
 
   document.getElementById('brahmasthan-obstructed').addEventListener('change', (e) => {
     document.getElementById('obstruction-type-wrap').style.display = e.target.checked ? 'inline' : 'none';
@@ -228,13 +370,25 @@ function assembleLayout() {
 
   const facade_bearing_deg = parseFloat(document.getElementById('facade-bearing').value) || 0.0;
 
-  return { plot, rooms, facade_bearing_deg, furniture_dimensions, polygonErrors };
+  let boundary = null;
+  const boundaryText = document.getElementById('plot-boundary').value.trim();
+  if (boundaryText) {
+    try {
+      boundary = JSON.parse(boundaryText);
+    } catch (e) {
+      polygonErrors.push(`flat boundary: invalid JSON (${e.message})`);
+    }
+  }
+
+  const include_ritual_protocol = document.getElementById('include-ritual').checked;
+
+  return { plot, rooms, facade_bearing_deg, furniture_dimensions, boundary, include_ritual_protocol, polygonErrors };
 }
 
 function layoutPayload() {
   const { polygonErrors, ...layout } = assembleLayout();
   if (polygonErrors.length) {
-    setSaveStatus(`Fix room polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
+    setSaveStatus(`Fix polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
     return null;
   }
   return layout;
@@ -246,10 +400,64 @@ function severityClass(severity) {
   return '';
 }
 
+function renderRitual(ritual) {
+  if (!ritual) return '';
+  const alt = (ritual.alternate_mantras || []).length
+    ? ` (alt: ${ritual.alternate_mantras.join(', ')})` : '';
+  return `
+    <details class="ritual-details">
+      <summary>Ritual / activation protocol (${ritual.deity})</summary>
+      <div class="ritual-box">
+        <div><strong>Opening:</strong> ${ritual.opening_mantra.mantra} (${ritual.opening_mantra.repetitions}x) — obstacle removal</div>
+        <div><strong>Direction mantra:</strong> ${ritual.primary_mantra}${alt}</div>
+        <div><strong>Repetitions:</strong> ${ritual.repetitions.full} full, ${ritual.repetitions.short} if time-limited, ${ritual.repetitions.daily_maintenance} for daily upkeep</div>
+        <div><strong>Sequence:</strong>
+          <ol>${ritual.activation_sequence.map(s => `<li>${s}</li>`).join('')}</ol>
+        </div>
+        <div><strong>Timing:</strong> ${ritual.auspicious_timing}</div>
+        <div class="disclaimer">${ritual.disclaimer}</div>
+      </div>
+    </details>`;
+}
+
+function renderShapeDiagnosisPanel(diag) {
+  if (!diag) return '';
+  const hollowFlag = diag.hollow_center
+    ? '<span class="flag-bad">YES — critical hollow/external centre defect</span>'
+    : '<span class="flag-ok">no</span>';
+  const offsetFlag = diag.high_center_offset
+    ? '<span class="flag-bad">high</span>'
+    : '<span class="flag-ok">normal</span>';
+  const missingRows = (diag.missing_zones || []).map(mz => `
+    <tr><td>${mz.octant} (${mz.zones.join('/')})</td><td>${mz.area_ft2.toFixed(1)} ft²</td><td>${(mz.area_fraction * 100).toFixed(1)}% of bounding box</td></tr>
+  `).join('');
+  return `
+    <div class="shape-panel">
+      <strong>Footprint shape diagnosis</strong>
+      <table>
+        <tr><td>True centroid (Brahmasthan)</td><td>(${diag.centroid.x}, ${diag.centroid.y})</td></tr>
+        <tr><td>Bounding-box centre</td><td>(${diag.bbox_center.x}, ${diag.bbox_center.y})</td></tr>
+        <tr><td>Centre offset</td><td>${diag.center_offset_ft.toFixed(2)} ft (${(diag.center_offset_fraction * 100).toFixed(1)}% of bbox diagonal) — ${offsetFlag}</td></tr>
+        <tr><td>Hollow / external centre</td><td>${hollowFlag}</td></tr>
+        <tr><td>Footprint fill</td><td>${(diag.footprint_fill_fraction * 100).toFixed(1)}% of bounding box</td></tr>
+      </table>
+      ${missingRows ? `<div style="margin-top:0.5rem;">Cut / missing zones:<table>${missingRows}</table></div>` : '<div class="muted" style="margin-top:0.5rem;">No missing zones above the noise threshold.</div>'}
+    </div>`;
+}
+
 function renderResults(result) {
   const el = document.getElementById('results');
 
   let html = '';
+  if (planImage && !calibrated && (boundaryShape || tracedRooms.length)) {
+    html += `<div class="warning" style="border-color:#d68910; background:#fef5e7;">
+      <strong>Traced without a scale.</strong> Shape and direction findings below
+      (hollow-centre, missing zones, room compass zones) are still correct — they
+      only depend on angles and area proportions. Any distance/area figures shown
+      in feet are placeholder units, not real measurements, until you calibrate
+      the trace (click "Set scale" above and re-audit).
+    </div>`;
+  }
   html += `<h2>Results</h2>`;
   html += `<div class="counts">
     <span>Major violations: <strong>${result.major_count}</strong></span>
@@ -257,6 +465,8 @@ function renderResults(result) {
   </div>`;
   html += `<div class="score-line">Compliance score: ${result.compliance_score} / 100</div>`;
   html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.</p>`;
+
+  html += renderShapeDiagnosisPanel(result.shape_diagnosis);
 
   html += `<h3>Violations</h3>`;
   const allViolations = [];
@@ -266,6 +476,8 @@ function renderResults(result) {
     });
   });
   result.plot_level.forEach(v => allViolations.push(v));
+  (result.shape_defect_violations || []).forEach(v => allViolations.push(v));
+  (result.brahmasthan_violations || []).forEach(v => allViolations.push(v));
 
   if (allViolations.length === 0) {
     html += `<p class="muted">No scored violations.</p>`;
@@ -275,7 +487,16 @@ function renderResults(result) {
         <strong>${v.room ? v.room : 'Plot'}</strong> — ${v.rule_type}: <em>${v.violation}</em>
         (severity: ${v.severity})<br>
         <span>${v.remedy || ''}</span>
+        ${renderRitual(v.ritual)}
       </div>`;
+    });
+  }
+
+  const shapeNotes = [...(result.shape_defect_notes || []), ...(result.brahmasthan_notes || [])];
+  if (shapeNotes.length) {
+    html += `<h3>Geometry notes (informational, not scored)</h3>`;
+    shapeNotes.forEach(n => {
+      html += `<div class="warning"><strong>${n.room || ''}</strong> — ${n.rule_type}: ${n.message || ''}</div>`;
     });
   }
 
@@ -334,7 +555,7 @@ function ownerName() {
 }
 
 async function loadFlatsList() {
-  const resp = await fetch('/flats');
+  const resp = await fetch('/flats', { cache: 'no-store' });
   const flats = await resp.json();
   renderFlatsList(flats);
 }
@@ -361,7 +582,7 @@ function renderFlatsList(flats) {
 }
 
 async function loadFlatIntoForm(flatId) {
-  const resp = await fetch(`/flats/${flatId}`);
+  const resp = await fetch(`/flats/${flatId}`, { cache: 'no-store' });
   if (!resp.ok) {
     setSaveStatus('Could not load that flat.', true);
     return;
@@ -388,6 +609,8 @@ function populateFormFromInput(input) {
   document.getElementById('obstruction-type-wrap').style.display = plot.brahmasthan_obstructed ? 'inline' : 'none';
   document.getElementById('obstruction-type').value = plot.brahmasthan_obstruction_type || '';
   document.getElementById('facade-bearing').value = input.facade_bearing_deg || 0;
+  document.getElementById('plot-boundary').value = input.boundary ? JSON.stringify(input.boundary) : '';
+  document.getElementById('include-ritual').checked = !!input.include_ritual_protocol;
 
   const furnitureDims = input.furniture_dimensions || {};
 
@@ -412,6 +635,12 @@ function populateFormFromInput(input) {
     }
   });
   if (!(input.rooms || []).length) addRoomRow();
+
+  // The trace canvas/legend can't reconstruct a loaded flat's original click
+  // points (only the final feet polygons were saved), so just clear the
+  // client-side trace bookkeeping rather than show a stale/wrong legend.
+  clearTraceUiState();
+  setTraceStatus('Loaded a saved flat. Its boundary/room polygons are in the fields below (not re-drawn here) — re-trace or hand-edit the JSON if you want to change them.');
 }
 
 async function saveNewFlat() {
@@ -421,7 +650,11 @@ async function saveNewFlat() {
     setSaveStatus('Owner name and a flat label are both required to save.', true);
     return;
   }
-  const layout = assembleLayout();
+  const { polygonErrors, ...layout } = assembleLayout();
+  if (polygonErrors.length) {
+    setSaveStatus(`Fix polygon JSON before saving: ${polygonErrors.join('; ')}`, true);
+    return;
+  }
   const payload = { ...layout, label, owner, note: document.getElementById('version-note').value.trim() || null };
 
   const resp = await fetch('/flats', {
@@ -446,7 +679,11 @@ async function saveVersion() {
     setSaveStatus('Load or save a flat first.', true);
     return;
   }
-  const layout = assembleLayout();
+  const { polygonErrors, ...layout } = assembleLayout();
+  if (polygonErrors.length) {
+    setSaveStatus(`Fix polygon JSON before saving: ${polygonErrors.join('; ')}`, true);
+    return;
+  }
   const payload = { ...layout, note: document.getElementById('version-note').value.trim() || null };
 
   const resp = await fetch(`/flats/${loadedFlatId}/versions`, {
@@ -464,12 +701,621 @@ async function saveVersion() {
   loadFlatsList();
 }
 
+// ---------------------------------------------------------------------------
+// Projects: shared building-level data (see storage.py's module docstring).
+// Purely a pre-fill/suggest convenience over the SAME fields the rest of the
+// form already uses (#plot-boundary, #facade-bearing, each room's
+// .room-polygon) -- loading a project doesn't create any new field, and
+// proposing one just reads the current values of those same fields.
+// ---------------------------------------------------------------------------
+
+let projectsCache = [];
+
+async function loadProjectsList() {
+  const resp = await fetch('/projects', { cache: 'no-store' });
+  projectsCache = await resp.json();
+  const select = document.getElementById('project-select');
+  const current = select.value;
+  select.innerHTML = '<option value="">-- none / not listed --</option>' +
+    projectsCache.map(p => `<option value="${p.id}">${p.name} (v${p.latest_version})</option>`).join('');
+  select.value = current;
+  updateProjectDetail();
+}
+
+function updateProjectDetail() {
+  const id = document.getElementById('project-select').value;
+  const detail = document.getElementById('project-detail');
+  const loadBtn = document.getElementById('load-project-btn');
+  const modeNote = document.getElementById('proposal-mode-note');
+  const newFields = document.getElementById('proposal-new-fields');
+
+  if (!id) {
+    detail.textContent = '';
+    loadBtn.disabled = true;
+    modeNote.textContent = 'No project selected above, so this suggests a brand-new project.';
+    newFields.style.display = '';
+    return;
+  }
+  const p = projectsCache.find(p => String(p.id) === id);
+  loadBtn.disabled = false;
+  detail.textContent = p
+    ? [p.rera_reference && `RERA: ${p.rera_reference}`, p.builder && `Builder: ${p.builder}`, p.address]
+        .filter(Boolean).join(' · ') || 'No additional details on record.'
+    : '';
+  modeNote.textContent = `A project is selected above, so this suggests a CORRECTION/update to "${p ? p.name : id}" instead of a new project.`;
+  newFields.style.display = 'none';
+}
+
+async function loadSelectedProjectBasePlan() {
+  const id = document.getElementById('project-select').value;
+  if (!id) return;
+  const resp = await fetch(`/projects/${id}`, { cache: 'no-store' });
+  if (!resp.ok) {
+    setTraceStatus('Could not load that project.');
+    return;
+  }
+  const project = await resp.json();
+  const latest = project.versions[project.versions.length - 1];
+  if (!latest) {
+    setTraceStatus('That project has no confirmed data yet.');
+    return;
+  }
+
+  if (latest.boundary) {
+    document.getElementById('plot-boundary').value = JSON.stringify(latest.boundary);
+  }
+  if (latest.facade_bearing_deg !== null && latest.facade_bearing_deg !== undefined) {
+    document.getElementById('facade-bearing').value = latest.facade_bearing_deg;
+    setCompassAngle(latest.facade_bearing_deg);
+  }
+  let roomsAdded = 0;
+  (latest.base_rooms || []).forEach(room => {
+    if (!room.polygon) return;
+    addRoomRow();
+    const row = document.querySelector('.room-row:last-child');
+    row.querySelector('.room-type').value = room.name;
+    updateFlags(row);
+    row.querySelector('.room-polygon').value = JSON.stringify(room.polygon);
+    roomsAdded++;
+  });
+
+  clearTraceUiState();
+  setTraceStatus(
+    `Loaded "${project.name}"'s base plan (v${latest.version_number}): boundary` +
+    (roomsAdded ? ` + ${roomsAdded} base room(s)` : '') +
+    `. This is a typical/confirmed layout for the building — adjust anything that differs in your specific unit, then trace/add any rooms not already listed.`
+  );
+}
+
+function toggleProposeForm() {
+  const form = document.getElementById('propose-project-form');
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : '';
+  if (!showing) updateProjectDetail();
+}
+
+function gatherCurrentRoomsForProposal() {
+  const rooms = [];
+  document.querySelectorAll('.room-row').forEach(row => {
+    const name = row.querySelector('.room-type').value;
+    const polyText = row.querySelector('.room-polygon').value.trim();
+    if (!polyText) return;
+    try {
+      rooms.push({ name, polygon: JSON.parse(polyText) });
+    } catch (e) { /* skip rooms with invalid polygon JSON -- not this form's job to validate that */ }
+  });
+  return rooms;
+}
+
+async function submitProjectProposal() {
+  const submittedBy = document.getElementById('proposal-submitted-by').value.trim();
+  const statusEl = document.getElementById('proposal-status');
+  if (!submittedBy) {
+    statusEl.textContent = 'Your name/label is required.';
+    statusEl.style.color = '#c0392b';
+    return;
+  }
+
+  const projectId = document.getElementById('project-select').value || null;
+  let boundary = null;
+  const boundaryText = document.getElementById('plot-boundary').value.trim();
+  if (boundaryText) {
+    try { boundary = JSON.parse(boundaryText); }
+    catch (e) { statusEl.textContent = 'Boundary field has invalid JSON.'; statusEl.style.color = '#c0392b'; return; }
+  }
+  const facadeBearing = parseFloat(document.getElementById('facade-bearing').value);
+
+  const payload = {
+    submitted_by: submittedBy,
+    project_id: projectId ? parseInt(projectId, 10) : null,
+    proposed_boundary: boundary,
+    proposed_facade_bearing_deg: isNaN(facadeBearing) ? null : facadeBearing,
+    proposed_base_rooms: gatherCurrentRoomsForProposal(),
+    note: document.getElementById('proposal-note').value.trim() || null,
+  };
+  if (!projectId) {
+    payload.proposed_name = document.getElementById('proposal-project-name').value.trim();
+    payload.proposed_rera_reference = document.getElementById('proposal-rera').value.trim() || null;
+    payload.proposed_builder = document.getElementById('proposal-builder').value.trim() || null;
+    payload.proposed_address = document.getElementById('proposal-address').value.trim() || null;
+    if (!payload.proposed_name) {
+      statusEl.textContent = 'Project/building name is required for a new project.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+  }
+
+  const resp = await fetch('/projects/proposals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await resp.json();
+  if (!resp.ok) {
+    statusEl.textContent = body.detail || 'Submission failed.';
+    statusEl.style.color = '#c0392b';
+    return;
+  }
+  statusEl.textContent = `Submitted (proposal #${body.proposal_id}) — pending admin review.`;
+  statusEl.style.color = '#2e7d32';
+}
+
+document.getElementById('project-select').addEventListener('change', updateProjectDetail);
+document.getElementById('load-project-btn').addEventListener('click', loadSelectedProjectBasePlan);
+document.getElementById('propose-project-btn').addEventListener('click', toggleProposeForm);
+document.getElementById('submit-proposal-btn').addEventListener('click', submitProjectProposal);
+
+// ---------------------------------------------------------------------------
+// Floor plan tracing tool: a GUIDED, click-to-trace aid. No automatic wall or
+// room detection happens anywhere here — the user identifies every point
+// themselves (on an uploaded photo, or a plain grid); this tool only measures
+// distances/angles from those clicks and converts them to feet. It writes
+// its output into the SAME #plot-boundary / room ".room-polygon" fields the
+// rest of the form already used before this tool existed — it introduces no
+// new data shape, just a friendlier way to fill in fields that already work.
+// ---------------------------------------------------------------------------
+
+const traceCanvas = document.getElementById('trace-canvas');
+const traceCtx = traceCanvas.getContext('2d');
+
+const GRID_PX = 40; // fixed on-screen pixel size of one grid square (grid mode only)
+const ROOM_COLORS = ['#2e7d32', '#1565c0', '#8e24aa', '#ef6c00', '#00838f', '#ad1457', '#6d4c41'];
+
+let planImage = null;    // Image object, or null (plain-grid mode)
+let pxPerFoot = null;    // grid mode: always a real scale. Photo mode: 1.0 (placeholder) until calibrated.
+let calibrated = true;   // false only in photo mode before the user completes calibration
+let gridFeetPerSquare = 1;
+let traceMode = 'idle';  // 'idle' | 'calibrate' | 'boundary' | 'room'
+let calibPoints = [];    // up to 2 [px,py] pairs, photo mode only
+let draftPoints = [];    // in-progress boundary/room points, in canvas px
+let boundaryShape = null;   // { pxPoints, feetPoints } or null
+let tracedRooms = [];       // [{ id, name, pxPoints, feetPoints }]
+let traceIdCounter = 0;
+
+function setTraceStatus(msg) {
+  document.getElementById('trace-status').textContent = msg;
+}
+
+function populateTraceRoomTypes() {
+  document.getElementById('trace-room-type').innerHTML =
+    schemaInfo.room_types.map(r => `<option value="${r}">${r}</option>`).join('');
+}
+
+function initGrid() {
+  planImage = null;
+  traceCanvas.width = 720;
+  traceCanvas.height = 480;
+  pxPerFoot = GRID_PX / gridFeetPerSquare;
+  calibrated = true; // an explicit "1 square = X ft" IS a real scale, just not photo-calibrated
+  document.getElementById('calibrate-btn').style.display = 'none';
+  document.getElementById('clear-image-btn').style.display = 'none';
+  document.getElementById('grid-scale-wrap').style.display = '';
+  updateCalibrationBadge();
+  redrawTrace();
+}
+
+function loadPlanImage(file) {
+  const img = new Image();
+  img.onload = () => {
+    const maxW = 760, maxH = 900;
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const scale = Math.min(maxW / w, maxH / h, 1);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+    planImage = img;
+    traceCanvas.width = w;
+    traceCanvas.height = h;
+    // Placeholder scale (1 canvas px = 1 unit) so tracing is never blocked --
+    // see updateCalibrationBadge()/module notes: shape/direction results
+    // (hollow-centre, missing zones, room compass zones) are correct
+    // regardless of scale, since they only depend on angles and area
+    // RATIOS. Only absolute measurements (sq ft, furniture-fit suggestions)
+    // need the real calibration. Calibrating later rescales everything
+    // already traced (see recomputeAllFeetFromPx) -- nothing is lost by
+    // skipping it now.
+    pxPerFoot = 1.0;
+    calibrated = false;
+    boundaryShape = null;
+    tracedRooms = [];
+    document.getElementById('plot-boundary').value = '';
+    document.getElementById('calibrate-btn').style.display = '';
+    document.getElementById('clear-image-btn').style.display = '';
+    document.getElementById('grid-scale-wrap').style.display = 'none';
+    traceMode = 'idle';
+    draftPoints = [];
+    calibPoints = [];
+    renderTraceLegend();
+    updateCalibrationBadge();
+    setTraceStatus('Photo loaded. You can trace right away — shape and direction results will be correct either way. For real measurements (sq ft, furniture fit), click "Set scale" and click two points a known distance apart (e.g. a door) — you can do this any time, even after tracing.');
+    redrawTrace();
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function updateCalibrationBadge() {
+  const el = document.getElementById('calibration-badge');
+  if (planImage && !calibrated) {
+    el.textContent = '⚠ Not calibrated — distances/areas below are placeholder units, not real feet, until you set the scale. Shape and direction findings (hollow-centre, missing zones, room compass zones) are unaffected and already correct.';
+    el.style.display = '';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+// Re-derives every already-committed shape's feet coordinates from its
+// stored pixel points using the CURRENT pxPerFoot, and rewrites the fields
+// they feed. Called whenever the scale changes (calibration completes, or
+// the grid's feet-per-square is edited) so nothing ends up mixing shapes
+// traced at different scales within the same session -- pxPoints are kept
+// as the permanent ground truth precisely so this is always possible.
+function recomputeAllFeetFromPx() {
+  if (boundaryShape) {
+    boundaryShape.feetPoints = boundaryShape.pxPoints.map(([px, py]) => pxToFeet(px, py));
+    document.getElementById('plot-boundary').value = JSON.stringify(boundaryShape.feetPoints);
+  }
+  tracedRooms.forEach(r => {
+    r.feetPoints = r.pxPoints.map(([px, py]) => pxToFeet(px, py));
+    const field = document.querySelector(`.room-row[data-trace-id="${r.id}"] .room-polygon`);
+    if (field) field.value = JSON.stringify(r.feetPoints);
+  });
+  renderTraceLegend();
+}
+
+function snapIfGrid(px, py) {
+  if (planImage) return [px, py];
+  return [Math.round(px / GRID_PX) * GRID_PX, Math.round(py / GRID_PX) * GRID_PX];
+}
+
+function pxToFeet(px, py) {
+  const fx = px / pxPerFoot;
+  const fy = (traceCanvas.height - py) / pxPerFoot; // flip y: canvas-down -> feet-up
+  return [Math.round(fx * 100) / 100, Math.round(fy * 100) / 100];
+}
+
+function drawPolygon(pxPoints, color, closed, label) {
+  if (!pxPoints.length) return;
+  const ctx = traceCtx;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pxPoints[0][0], pxPoints[0][1]);
+  for (let i = 1; i < pxPoints.length; i++) ctx.lineTo(pxPoints[i][0], pxPoints[i][1]);
+  if (closed && pxPoints.length > 2) ctx.closePath();
+  ctx.stroke();
+  pxPoints.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 3, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+  if (label) {
+    const cx = pxPoints.reduce((s, p) => s + p[0], 0) / pxPoints.length;
+    const cy = pxPoints.reduce((s, p) => s + p[1], 0) / pxPoints.length;
+    ctx.font = '12px sans-serif';
+    ctx.fillText(label, cx + 4, cy);
+  }
+}
+
+function redrawTrace() {
+  const ctx = traceCtx;
+  ctx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
+  if (planImage) {
+    ctx.drawImage(planImage, 0, 0, traceCanvas.width, traceCanvas.height);
+  } else {
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0, 0, traceCanvas.width, traceCanvas.height);
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= traceCanvas.width; x += GRID_PX) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, traceCanvas.height); ctx.stroke();
+    }
+    for (let y = 0; y <= traceCanvas.height; y += GRID_PX) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(traceCanvas.width, y); ctx.stroke();
+    }
+  }
+
+  if (boundaryShape) drawPolygon(boundaryShape.pxPoints, '#c0392b', true, 'Boundary');
+  tracedRooms.forEach((r, i) => drawPolygon(r.pxPoints, ROOM_COLORS[i % ROOM_COLORS.length], true, r.name));
+
+  if (draftPoints.length) {
+    const color = traceMode === 'boundary' ? '#c0392b' : ROOM_COLORS[tracedRooms.length % ROOM_COLORS.length];
+    drawPolygon(draftPoints, color, false, null);
+  }
+  if (traceMode === 'calibrate' && calibPoints.length) {
+    drawPolygon(calibPoints, '#2e5aac', false, null);
+  }
+}
+
+function canvasPointFromClient(clientX, clientY) {
+  const rect = traceCanvas.getBoundingClientRect();
+  const x = (clientX - rect.left) * (traceCanvas.width / rect.width);
+  const y = (clientY - rect.top) * (traceCanvas.height / rect.height);
+  return snapIfGrid(x, y);
+}
+
+function handleTracePoint(clientX, clientY) {
+  const [x, y] = canvasPointFromClient(clientX, clientY);
+
+  if (traceMode === 'calibrate') {
+    calibPoints.push([x, y]);
+    if (calibPoints.length === 1) {
+      setTraceStatus('Click the second point of your known measurement.');
+    } else if (calibPoints.length === 2) {
+      const dist = Math.hypot(calibPoints[1][0] - calibPoints[0][0], calibPoints[1][1] - calibPoints[0][1]);
+      const feetStr = prompt('Real-world distance between those two points, in feet:');
+      const feet = parseFloat(feetStr);
+      if (feetStr !== null && !isNaN(feet) && feet > 0) {
+        pxPerFoot = dist / feet;
+        calibrated = true;
+        const hadPriorTraces = boundaryShape || tracedRooms.length;
+        recomputeAllFeetFromPx();
+        setTraceStatus(
+          `Scale set: ${pxPerFoot.toFixed(2)} px/ft.` +
+          (hadPriorTraces ? ' Previously traced shapes were rescaled to match.' : ' Now trace the boundary or a room.')
+        );
+      } else {
+        setTraceStatus('Scale not set (invalid or cancelled) — still fine to keep tracing, just click "Set scale" again whenever you have a measurement.');
+      }
+      traceMode = 'idle';
+      calibPoints = [];
+      updateCalibrationBadge();
+    }
+    redrawTrace();
+    return;
+  }
+
+  if (traceMode === 'boundary' || traceMode === 'room') {
+    draftPoints.push([x, y]);
+    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+    const what = traceMode === 'boundary' ? "flat's outer wall" : 'room';
+    setTraceStatus(`${draftPoints.length} point(s) placed. Keep clicking around the ${what}, then "Finish shape" (need at least 3 points).`);
+    redrawTrace();
+  }
+}
+
+traceCanvas.addEventListener('click', (evt) => handleTracePoint(evt.clientX, evt.clientY));
+traceCanvas.addEventListener('touchend', (evt) => {
+  evt.preventDefault();
+  const t = evt.changedTouches[0];
+  handleTracePoint(t.clientX, t.clientY);
+}, { passive: false });
+
+function startMode(newMode) {
+  if (draftPoints.length > 0 && (traceMode === 'boundary' || traceMode === 'room')) {
+    if (!confirm(`Discard the ${draftPoints.length}-point trace in progress and start a new one?`)) return;
+  }
+  traceMode = newMode;
+  draftPoints = [];
+  calibPoints = [];
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = newMode === 'idle' ? 'none' : '';
+  traceCanvas.classList.add('mode-active');
+  if (newMode === 'calibrate') {
+    setTraceStatus('Click the first point of a wall/edge whose real length you know.');
+  } else if (newMode === 'boundary') {
+    setTraceStatus("Click around the flat's outer boundary, corner by corner." + (calibrated ? '' : ' (Not calibrated yet — that only affects the ft²/distance numbers, not the shape itself.)'));
+  } else if (newMode === 'room') {
+    const roomType = document.getElementById('trace-room-type').value;
+    setTraceStatus(`Click around the ${roomType}'s walls, corner by corner.` + (calibrated ? '' : ' (Not calibrated yet — that only affects the ft²/distance numbers, not the shape itself.)'));
+  }
+  redrawTrace();
+}
+
+function finishShape() {
+  if (draftPoints.length < 3) return;
+  const feetPoints = draftPoints.map(([px, py]) => pxToFeet(px, py));
+
+  if (traceMode === 'boundary') {
+    boundaryShape = { pxPoints: draftPoints.slice(), feetPoints };
+    document.getElementById('plot-boundary').value = JSON.stringify(feetPoints);
+    setTraceStatus('Boundary traced. Trace each room next, or adjust the Plot/Rooms fields below.');
+  } else if (traceMode === 'room') {
+    const roomType = document.getElementById('trace-room-type').value;
+    addRoomRow();
+    const row = document.querySelector('.room-row:last-child');
+    row.querySelector('.room-type').value = roomType;
+    updateFlags(row);
+    row.querySelector('.room-polygon').value = JSON.stringify(feetPoints);
+    const id = traceIdCounter++;
+    row.dataset.traceId = id;
+    tracedRooms.push({ id, name: roomType, pxPoints: draftPoints.slice(), feetPoints });
+    setTraceStatus(`${roomType} traced and added to the Rooms list below. Pick its zone there, then trace the next room (or click Audit).`);
+  }
+
+  traceMode = 'idle';
+  draftPoints = [];
+  traceCanvas.classList.remove('mode-active');
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = 'none';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function cancelShape() {
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  traceCanvas.classList.remove('mode-active');
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  document.getElementById('cancel-shape-btn').style.display = 'none';
+  setTraceStatus('Cancelled. Choose an action to continue tracing.');
+  redrawTrace();
+}
+
+function undoLastPoint() {
+  if (traceMode === 'calibrate' && calibPoints.length) {
+    calibPoints.pop();
+  } else if (draftPoints.length) {
+    draftPoints.pop();
+    document.getElementById('finish-shape-btn').style.display = draftPoints.length >= 3 ? '' : 'none';
+  }
+  redrawTrace();
+}
+
+function resetTracing() {
+  boundaryShape = null;
+  tracedRooms = [];
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  document.getElementById('plot-boundary').value = '';
+  renderTraceLegend();
+  redrawTrace();
+  setTraceStatus('Tracing cleared. Previously added room rows below were left as-is — remove them there if you no longer need them.');
+}
+
+function clearTraceUiState() {
+  boundaryShape = null;
+  tracedRooms = [];
+  draftPoints = [];
+  calibPoints = [];
+  traceMode = 'idle';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function removeBoundaryTrace() {
+  boundaryShape = null;
+  document.getElementById('plot-boundary').value = '';
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function removeTracedRoom(id) {
+  const idx = tracedRooms.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const row = document.querySelector(`.room-row[data-trace-id="${id}"]`);
+  if (row) row.remove();
+  tracedRooms.splice(idx, 1);
+  renderTraceLegend();
+  redrawTrace();
+}
+
+function renderTraceLegend() {
+  const el = document.getElementById('trace-legend');
+  let html = '';
+  if (boundaryShape) {
+    html += `<div class="legend-row"><span class="swatch" style="background:#c0392b;"></span> Boundary (${boundaryShape.feetPoints.length} pts) <button type="button" class="legend-remove" data-kind="boundary">Remove</button></div>`;
+  }
+  tracedRooms.forEach((r, i) => {
+    html += `<div class="legend-row"><span class="swatch" style="background:${ROOM_COLORS[i % ROOM_COLORS.length]};"></span> ${r.name} (${r.feetPoints.length} pts) <button type="button" class="legend-remove" data-kind="room" data-id="${r.id}">Remove</button></div>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.legend-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.kind === 'boundary') removeBoundaryTrace();
+      else removeTracedRoom(parseInt(btn.dataset.id, 10));
+    });
+  });
+}
+
+document.getElementById('plan-image-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadPlanImage(file);
+});
+document.getElementById('clear-image-btn').addEventListener('click', () => {
+  document.getElementById('plan-image-input').value = '';
+  initGrid();
+  setTraceStatus('Back to plain grid. Trace directly, or upload another photo.');
+});
+document.getElementById('grid-feet-per-square').addEventListener('change', (e) => {
+  const v = parseFloat(e.target.value);
+  if (!isNaN(v) && v > 0 && !planImage) {
+    gridFeetPerSquare = v;
+    pxPerFoot = GRID_PX / gridFeetPerSquare;
+    // Rescale anything already traced under the old grid scale -- without
+    // this, shapes traced before vs. after the change would silently end up
+    // in different units within the same session (the same bug class this
+    // whole tool exists to avoid).
+    recomputeAllFeetFromPx();
+    redrawTrace();
+  }
+});
+document.getElementById('calibrate-btn').addEventListener('click', () => startMode('calibrate'));
+document.getElementById('trace-boundary-btn').addEventListener('click', () => startMode('boundary'));
+document.getElementById('trace-room-btn').addEventListener('click', () => startMode('room'));
+document.getElementById('undo-point-btn').addEventListener('click', undoLastPoint);
+document.getElementById('finish-shape-btn').addEventListener('click', finishShape);
+document.getElementById('cancel-shape-btn').addEventListener('click', cancelShape);
+document.getElementById('reset-trace-btn').addEventListener('click', resetTracing);
+
+// --- Compass dial: writes facade-bearing in the SAME convention
+// zone_geometry.py's bearing_deg() uses (0 = N, clockwise). -----------------
+const compassDial = document.getElementById('compass-dial');
+const compassNeedle = document.getElementById('compass-needle');
+let compassDragging = false;
+
+function setCompassAngle(deg) {
+  deg = ((deg % 360) + 360) % 360;
+  compassNeedle.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
+  document.getElementById('compass-readout').textContent = `${deg.toFixed(1)}° (facing image-up)`;
+  document.getElementById('facade-bearing').value = deg.toFixed(1);
+}
+
+function angleFromClientXY(clientX, clientY) {
+  const rect = compassDial.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
+  return Math.atan2(dx, -dy) * 180 / Math.PI;
+}
+
+compassDial.addEventListener('mousedown', (evt) => {
+  evt.preventDefault();
+  compassDragging = true;
+  setCompassAngle(angleFromClientXY(evt.clientX, evt.clientY));
+});
+window.addEventListener('mousemove', (evt) => {
+  if (compassDragging) setCompassAngle(angleFromClientXY(evt.clientX, evt.clientY));
+});
+window.addEventListener('mouseup', () => { compassDragging = false; });
+
+compassDial.addEventListener('touchstart', (evt) => {
+  evt.preventDefault();
+  compassDragging = true;
+  const t = evt.touches[0];
+  setCompassAngle(angleFromClientXY(t.clientX, t.clientY));
+}, { passive: false });
+window.addEventListener('touchmove', (evt) => {
+  if (compassDragging && evt.touches.length) {
+    const t = evt.touches[0];
+    setCompassAngle(angleFromClientXY(t.clientX, t.clientY));
+  }
+}, { passive: true });
+window.addEventListener('touchend', () => { compassDragging = false; });
+
+initGrid();
+renderTraceLegend();
+
 document.getElementById('audit-btn').addEventListener('click', runAudit);
 document.getElementById('save-new-btn').addEventListener('click', saveNewFlat);
 document.getElementById('save-version-btn').addEventListener('click', saveVersion);
 
 loadSchemaInfo();
 loadFlatsList();
+loadProjectsList();
 </script>
 
 </body>
