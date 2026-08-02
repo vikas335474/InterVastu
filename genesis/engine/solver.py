@@ -69,7 +69,7 @@ from __future__ import annotations
 import math
 from typing import Any, Sequence
 
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LineString, Point, Polygon
 
 import zone_geometry as zg
 from vastu_audit import OBJECT_PLACEMENT_RULES
@@ -196,6 +196,43 @@ def _polygon_walls(room_poly: Polygon, facade_bearing: float) -> list[dict[str, 
             "quadrant": _wall_quadrant(bearing),
         })
     return walls
+
+
+def nearest_wall(
+    room_polygon: Sequence[Coord],
+    point: Coord,
+    facade_bearing: float = 0.0,
+) -> dict[str, Any]:
+    """Return the polygon wall nearest to `point`, and the distance to it.
+
+    Public wrapper around the same wall/quadrant geometry
+    :func:`solve_bed_placement` and :func:`solve_stove_placement` use
+    internally (:func:`_polygon_walls`), exposed so other modules can answer
+    "which wall is this point flush against, and which compass direction
+    does that wall face" without duplicating the wall-finding logic. The
+    furniture-detection adapter (:mod:`furniture_detection_adapter`) is the
+    first such caller: it reuses this to turn a detected object's position
+    into the same wall-flush direction convention this module's own
+    INTERPRETATION NOTE 1 already establishes (headboard/stove flush
+    against a wall -> the compass direction of that wall).
+
+    Returns ``{"wall": <wall dict from _polygon_walls>, "distance_ft": float}``.
+    The wall dict's ``"quadrant"`` (N/E/S/W) and ``"bearing_deg"`` are the
+    fields callers typically want; the rest (``p1``/``p2``/``unit``/normals)
+    support geometry a caller might also need.
+    """
+    room_poly = _room_polygon(room_polygon)
+    walls = _polygon_walls(room_poly, facade_bearing)
+    pt = Point(point)
+
+    best_wall, best_dist = None, None
+    for wall in walls:
+        segment = LineString([wall["p1"], wall["p2"]])
+        distance = segment.distance(pt)
+        if best_dist is None or distance < best_dist:
+            best_dist, best_wall = distance, wall
+
+    return {"wall": best_wall, "distance_ft": float(best_dist)}
 
 
 def _room_ne_corner(room_poly: Polygon, facade_bearing: float) -> Coord:
