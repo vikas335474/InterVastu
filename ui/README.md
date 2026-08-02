@@ -99,3 +99,29 @@ neither file adds any new placement logic of its own.
 - `facade_bearing_deg` and any `furniture_dimensions` overrides are saved
   as part of a flat's version input, so reloading a saved flat restores its
   polygons and suggestion settings exactly as entered.
+
+## Shape diagnosis (hollow-centre + missing zones)
+
+The Plot fieldset has an optional **flat boundary polygon** field (JSON
+`[[x,y],...]` in feet, same convention as room polygons). When supplied, the
+server runs `zone_geometry.diagnose_shape()` (true centroid vs. bounding-box
+centre, hollow/external-centre check, cut/missing compass zones) and
+`vastu_audit.audit_shape_defects()` merges the results into the same scored
+violation list, so a hollow centre or a cut NE/SW corner lowers the
+compliance score exactly like any other major/minor violation. The result
+also carries a `shape_diagnosis` block, rendered as a standalone panel above
+the violation list. Leaving the boundary field blank skips this entirely —
+the rest of the audit is unaffected either way.
+
+## Ritual/activation protocol (opt-in)
+
+A checkbox ("Include traditional ritual/activation protocol with remedies")
+sends `include_ritual_protocol: true` in the request. When set, any
+directional violation (hollow-centre, missing-zone, Brahmasthan obstruction)
+gets a `ritual` block attached — the classical presiding deity, mantra, and
+Prana Pratishtha activation sequence for that direction
+(`genesis/engine/ritual_protocol.py`) — rendered as a collapsed `<details>`
+dropdown under the violation. **Off by default.** This is religious/cultural
+content, not a validated intervention; every ritual block carries its own
+disclaimer, and `audit_layout()` itself never depends on or imports this
+module — the server only calls it when the caller explicitly opts in.

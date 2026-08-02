@@ -36,6 +36,16 @@
   .suggestion { border-left: 4px solid #2e7d32; background: #eef7ee; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
   .suggestion.compromise { border-color: #d68910; background: #fef5e7; }
   .suggestion-error { border-left: 4px solid #999; background: #f4f4f4; padding: 0.5rem 0.75rem; margin: 0.5rem 0; color: #555; }
+  #boundary-wrap textarea { width: 100%; max-width: 600px; height: 3rem; font-family: monospace; font-size: 0.8rem; }
+  .shape-panel { background: #f4f7fb; border: 1px solid #d6e0ee; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.9rem; }
+  .shape-panel .flag-bad { color: #c0392b; font-weight: bold; }
+  .shape-panel .flag-ok { color: #2e7d32; }
+  .shape-panel table { border-collapse: collapse; margin-top: 0.4rem; }
+  .shape-panel td { padding: 0.15rem 0.6rem 0.15rem 0; }
+  .ritual-details { margin-top: 0.4rem; font-size: 0.85rem; }
+  .ritual-details summary { cursor: pointer; color: #6a4c93; font-weight: 600; }
+  .ritual-box { background: #f7f2fb; border-left: 4px solid #6a4c93; padding: 0.5rem 0.75rem; margin-top: 0.35rem; }
+  .ritual-box .disclaimer { color: #777; font-style: italic; margin-top: 0.35rem; }
 </style>
 </head>
 <body>
@@ -67,6 +77,29 @@
     <input type="number" id="facade-bearing" value="0" step="0.1" style="width:5rem;">
   </label>
   <span class="muted">Only affects rooms with a polygon entered (see below).</span>
+  <br><br>
+  <div id="boundary-wrap">
+    <label>Flat boundary polygon (JSON [[x,y],...] ft, optional):</label><br>
+    <textarea id="plot-boundary" placeholder="e.g. [[0,0],[40,0],[40,27],[27,27],[27,41],[0,41]] — the L-shape / U-shape / whole outer wall trace"></textarea>
+    <p class="muted">
+      When supplied, this runs the geometric shape diagnosis: the true area
+      centroid vs. the bounding-box centre, a check for a hollow/external
+      centre (e.g. U-shaped flats), and detection of cut/missing compass
+      zones (e.g. a missing NE corner). Uses the facade bearing above as
+      the plan's north offset. Leave blank to skip — the rest of the audit
+      is unaffected either way.
+    </p>
+  </div>
+  <label>
+    <input type="checkbox" id="include-ritual">
+    Include traditional ritual/activation protocol with remedies
+  </label>
+  <p class="muted">
+    Optional. Adds the classical directional deity, mantra, and Prana
+    Pratishtha activation sequence alongside any hollow-centre / missing-zone
+    remedy. This is religious/cultural content, not a validated intervention
+    — off by default, shown only if you ask for it.
+  </p>
 </fieldset>
 
 <fieldset>
@@ -228,13 +261,25 @@ function assembleLayout() {
 
   const facade_bearing_deg = parseFloat(document.getElementById('facade-bearing').value) || 0.0;
 
-  return { plot, rooms, facade_bearing_deg, furniture_dimensions, polygonErrors };
+  let boundary = null;
+  const boundaryText = document.getElementById('plot-boundary').value.trim();
+  if (boundaryText) {
+    try {
+      boundary = JSON.parse(boundaryText);
+    } catch (e) {
+      polygonErrors.push(`flat boundary: invalid JSON (${e.message})`);
+    }
+  }
+
+  const include_ritual_protocol = document.getElementById('include-ritual').checked;
+
+  return { plot, rooms, facade_bearing_deg, furniture_dimensions, boundary, include_ritual_protocol, polygonErrors };
 }
 
 function layoutPayload() {
   const { polygonErrors, ...layout } = assembleLayout();
   if (polygonErrors.length) {
-    setSaveStatus(`Fix room polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
+    setSaveStatus(`Fix polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
     return null;
   }
   return layout;
@@ -244,6 +289,51 @@ function severityClass(severity) {
   if (severity === 'major') return 'major';
   if (severity === 'minor') return 'minor';
   return '';
+}
+
+function renderRitual(ritual) {
+  if (!ritual) return '';
+  const alt = (ritual.alternate_mantras || []).length
+    ? ` (alt: ${ritual.alternate_mantras.join(', ')})` : '';
+  return `
+    <details class="ritual-details">
+      <summary>Ritual / activation protocol (${ritual.deity})</summary>
+      <div class="ritual-box">
+        <div><strong>Opening:</strong> ${ritual.opening_mantra.mantra} (${ritual.opening_mantra.repetitions}x) — obstacle removal</div>
+        <div><strong>Direction mantra:</strong> ${ritual.primary_mantra}${alt}</div>
+        <div><strong>Repetitions:</strong> ${ritual.repetitions.full} full, ${ritual.repetitions.short} if time-limited, ${ritual.repetitions.daily_maintenance} for daily upkeep</div>
+        <div><strong>Sequence:</strong>
+          <ol>${ritual.activation_sequence.map(s => `<li>${s}</li>`).join('')}</ol>
+        </div>
+        <div><strong>Timing:</strong> ${ritual.auspicious_timing}</div>
+        <div class="disclaimer">${ritual.disclaimer}</div>
+      </div>
+    </details>`;
+}
+
+function renderShapeDiagnosisPanel(diag) {
+  if (!diag) return '';
+  const hollowFlag = diag.hollow_center
+    ? '<span class="flag-bad">YES — critical hollow/external centre defect</span>'
+    : '<span class="flag-ok">no</span>';
+  const offsetFlag = diag.high_center_offset
+    ? '<span class="flag-bad">high</span>'
+    : '<span class="flag-ok">normal</span>';
+  const missingRows = (diag.missing_zones || []).map(mz => `
+    <tr><td>${mz.octant} (${mz.zones.join('/')})</td><td>${mz.area_ft2.toFixed(1)} ft²</td><td>${(mz.area_fraction * 100).toFixed(1)}% of bounding box</td></tr>
+  `).join('');
+  return `
+    <div class="shape-panel">
+      <strong>Footprint shape diagnosis</strong>
+      <table>
+        <tr><td>True centroid (Brahmasthan)</td><td>(${diag.centroid.x}, ${diag.centroid.y})</td></tr>
+        <tr><td>Bounding-box centre</td><td>(${diag.bbox_center.x}, ${diag.bbox_center.y})</td></tr>
+        <tr><td>Centre offset</td><td>${diag.center_offset_ft.toFixed(2)} ft (${(diag.center_offset_fraction * 100).toFixed(1)}% of bbox diagonal) — ${offsetFlag}</td></tr>
+        <tr><td>Hollow / external centre</td><td>${hollowFlag}</td></tr>
+        <tr><td>Footprint fill</td><td>${(diag.footprint_fill_fraction * 100).toFixed(1)}% of bounding box</td></tr>
+      </table>
+      ${missingRows ? `<div style="margin-top:0.5rem;">Cut / missing zones:<table>${missingRows}</table></div>` : '<div class="muted" style="margin-top:0.5rem;">No missing zones above the noise threshold.</div>'}
+    </div>`;
 }
 
 function renderResults(result) {
@@ -258,6 +348,8 @@ function renderResults(result) {
   html += `<div class="score-line">Compliance score: ${result.compliance_score} / 100</div>`;
   html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.</p>`;
 
+  html += renderShapeDiagnosisPanel(result.shape_diagnosis);
+
   html += `<h3>Violations</h3>`;
   const allViolations = [];
   result.rooms.forEach(r => {
@@ -266,6 +358,8 @@ function renderResults(result) {
     });
   });
   result.plot_level.forEach(v => allViolations.push(v));
+  (result.shape_defect_violations || []).forEach(v => allViolations.push(v));
+  (result.brahmasthan_violations || []).forEach(v => allViolations.push(v));
 
   if (allViolations.length === 0) {
     html += `<p class="muted">No scored violations.</p>`;
@@ -275,7 +369,16 @@ function renderResults(result) {
         <strong>${v.room ? v.room : 'Plot'}</strong> — ${v.rule_type}: <em>${v.violation}</em>
         (severity: ${v.severity})<br>
         <span>${v.remedy || ''}</span>
+        ${renderRitual(v.ritual)}
       </div>`;
+    });
+  }
+
+  const shapeNotes = [...(result.shape_defect_notes || []), ...(result.brahmasthan_notes || [])];
+  if (shapeNotes.length) {
+    html += `<h3>Geometry notes (informational, not scored)</h3>`;
+    shapeNotes.forEach(n => {
+      html += `<div class="warning"><strong>${n.room || ''}</strong> — ${n.rule_type}: ${n.message || ''}</div>`;
     });
   }
 
@@ -388,6 +491,8 @@ function populateFormFromInput(input) {
   document.getElementById('obstruction-type-wrap').style.display = plot.brahmasthan_obstructed ? 'inline' : 'none';
   document.getElementById('obstruction-type').value = plot.brahmasthan_obstruction_type || '';
   document.getElementById('facade-bearing').value = input.facade_bearing_deg || 0;
+  document.getElementById('plot-boundary').value = input.boundary ? JSON.stringify(input.boundary) : '';
+  document.getElementById('include-ritual').checked = !!input.include_ritual_protocol;
 
   const furnitureDims = input.furniture_dimensions || {};
 
@@ -421,7 +526,11 @@ async function saveNewFlat() {
     setSaveStatus('Owner name and a flat label are both required to save.', true);
     return;
   }
-  const layout = assembleLayout();
+  const { polygonErrors, ...layout } = assembleLayout();
+  if (polygonErrors.length) {
+    setSaveStatus(`Fix polygon JSON before saving: ${polygonErrors.join('; ')}`, true);
+    return;
+  }
   const payload = { ...layout, label, owner, note: document.getElementById('version-note').value.trim() || null };
 
   const resp = await fetch('/flats', {
@@ -446,7 +555,11 @@ async function saveVersion() {
     setSaveStatus('Load or save a flat first.', true);
     return;
   }
-  const layout = assembleLayout();
+  const { polygonErrors, ...layout } = assembleLayout();
+  if (polygonErrors.length) {
+    setSaveStatus(`Fix polygon JSON before saving: ${polygonErrors.join('; ')}`, true);
+    return;
+  }
   const payload = { ...layout, note: document.getElementById('version-note').value.trim() || null };
 
   const resp = await fetch(`/flats/${loadedFlatId}/versions`, {
