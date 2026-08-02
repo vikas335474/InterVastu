@@ -82,6 +82,39 @@ same licensed-consultant sign-off as the rest of the schema. Run the end-to-end
 demo (`python3 genesis/engine/run_geometry.py`) to see it on the Unit 12
 L-shaped fixture, where it reports a cut NE zone as a scored major defect.
 
+## `genesis/engine/geometry_engine.py` — rotation primitive + classical pada-grid overlay
+
+Two additions on top of `zone_geometry.py`, both deterministic geometry only:
+
+* **Rotation.** `rotate_point` / `rotate_polygon` are a general-purpose 2D
+  affine rotation about an arbitrary origin. `zone_geometry.py` already
+  corrects for `north_offset_deg`, but by rotating the *bearing
+  measurement*, not the vertices — enough for "which sector is this room
+  in", but not for overlaying an axis-aligned grid, which needs the
+  geometry itself rotated into a true-north frame first. `align_to_true_north`
+  is that compass-aware wrapper; the sign convention (compass
+  "clockwise-from-north" vs. standard math "counter-clockwise-from-+x") is
+  easy to get backwards, so it's asserted directly against
+  `zone_geometry.bearing_deg` in the test suite rather than only derived by
+  hand — see `tests/test_geometry_engine.py`.
+* **`pada_grid()`** overlays a classical **square** Vastu Purusha Mandala
+  grid (default 9x9 = 81 pada, the "Paramasayika" mandala most commonly
+  cited for residential plots; `MANDUKA_ORDER` = 8x8/64 pada is the other
+  commonly cited alternative) on the true-north-aligned flat, and reports
+  exact-intersection occupancy fractions per cell for the footprint and
+  each room. It deliberately does **not** implement a "32 equal angular
+  segments radiating from the centroid" construct some AI-generated Vastu
+  specs describe as "32-Pada" — the classical padas are a square grid
+  subdivision, not a radial slicing, and `zone_geometry.py`'s existing
+  16-sector scheme already owns angular zone logic. `pada_grid()` also
+  assigns **no deity/interpretation** to any cell — per-pada devata mapping
+  was already explicitly scoped out of this codebase pending dedicated
+  consultant sourcing (see `ritual_protocol.py`'s module docstring), and
+  this module doesn't revisit that call; its output shape just leaves room
+  for a future consultant-sourced map to be attached per cell later. Run
+  `python3 genesis/engine/run_geometry.py` to see a pada-occupancy summary
+  on the Unit 12 fixture, printed after the existing geometry/shape reports.
+
 ## `genesis/engine/ritual_protocol.py` — OPTIONAL ritual/activation content
 
 An **opt-in, fully decoupled** layer that pairs a directional physical remedy
