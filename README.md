@@ -82,6 +82,25 @@ same licensed-consultant sign-off as the rest of the schema. Run the end-to-end
 demo (`python3 genesis/engine/run_geometry.py`) to see it on the Unit 12
 L-shaped fixture, where it reports a cut NE zone as a scored major defect.
 
+## `genesis/engine/ritual_protocol.py` — OPTIONAL ritual/activation content
+
+An **opt-in, fully decoupled** layer that pairs a directional physical remedy
+with its culturally-authentic counterpart: the classical Vastu Purusha Mandala
+presiding deity and mantra for each of the 8 octants + the Brahmasthan (e.g.
+Ishana/Shiva for NE, Agni for SE, Brahma for the centre), plus the traditional
+Prana Pratishtha activation sequence, timing, and repetition guidance.
+
+Unlike invented "floor-band" scoring (which this project **refused** to add),
+this content reflects a real tradition rather than fabricated pseudo-precision
+— but that is a statement about authenticity, **not efficacy**: it is religious
+practice, no outcome is claimed, and every returned block carries an explicit
+disclaimer. It is deliberately **not** wired into `audit_layout` (that never
+imports it); `enrich_defects_with_ritual()` attaches content only to defects
+carrying a resolvable `direction` tag, and the UI exposes it behind an opt-in
+`include_ritual_protocol` flag that is **off by default**. Enabling it in a
+shipped product is a product + legal + cultural decision, not an engineering
+default — see the module docstring for the full rationale.
+
 ## `scene/` — deterministic 3D scene assembly + depth-map export
 
 Takes room polygons (in `zone_geometry.py`'s coordinate convention) plus
