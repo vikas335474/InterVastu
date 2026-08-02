@@ -311,6 +311,9 @@ def audit_brahmasthan(
                 "violation": violation_text,
                 "severity": "major",
                 "remedy": remedy,
+                # Direction tag for the OPTIONAL ritual_protocol enrichment
+                # layer (see ritual_protocol.py). Additive; unused by scoring.
+                "direction": "center",
             })
         elif overlaps:
             # Obstructing type, but the overlap is a thin sliver below the
@@ -459,6 +462,8 @@ def audit_shape_defects(
             ),
             "severity": "major",
             "remedy": SHAPE_DEFECT_REMEDIES["hollow_center"],
+            # Direction tag for the OPTIONAL ritual_protocol enrichment layer.
+            "direction": "center",
         })
     elif shape_diagnosis.get("high_center_offset"):
         # Only reported when NOT hollow — a hollow centre already subsumes and
@@ -498,6 +503,8 @@ def audit_shape_defects(
             "violation": f"{octant} zone cut from footprint ({fraction:.0%} of bounding box)",
             "severity": severity,
             "remedy": remedy,
+            # Direction tag for the OPTIONAL ritual_protocol enrichment layer.
+            "direction": octant,
         })
 
     return scored_violations, informational_notes

@@ -29,6 +29,7 @@ sys.path.insert(0, str(UI_DIR))
 
 from vastu_audit import load_schema, audit_layout  # noqa: E402
 import zone_geometry as zg  # noqa: E402
+import ritual_protocol  # noqa: E402
 import storage  # noqa: E402
 import suggestions  # noqa: E402
 
@@ -103,6 +104,20 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     result["suggestions"] = suggestions.suggest_for_layout(
         rooms, facade_bearing_deg=facade_bearing_deg, furniture_dimensions=furniture_dimensions
     )
+
+    # OPT-IN ONLY. Traditional ritual/activation content (ritual_protocol.py)
+    # is attached to directional defects only when the caller explicitly sets
+    # include_ritual_protocol: true. It is off by default because enabling it
+    # is a product/legal/cultural decision, not an audit default — see the
+    # ritual_protocol module docstring. include_ritual_protocol is persisted in
+    # input_data so a saved flat records whether it was requested.
+    include_ritual = bool(payload.get("include_ritual_protocol"))
+    input_data["include_ritual_protocol"] = include_ritual
+    if include_ritual:
+        for key in ("shape_defect_violations", "brahmasthan_violations"):
+            if key in result:
+                result[key] = ritual_protocol.enrich_defects_with_ritual(result[key])
+
     return input_data, result
 
 
