@@ -200,9 +200,112 @@
 
   .hidden { display: none !important; }
 
+  /* --- Mode toggle + wizard step chrome --------------------------------- */
+  .mode-toggle {
+    display: flex; gap: 0.4rem; background: #eceef2; border-radius: 999px;
+    padding: 0.25rem; width: fit-content; margin-bottom: 1.25rem;
+  }
+  .mode-toggle button {
+    border: none; background: transparent; border-radius: 999px; padding: 0.45rem 1rem;
+    font-size: 0.88rem; font-weight: 600; color: var(--text-muted);
+  }
+  .mode-toggle button.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow); }
+  .mode-toggle button:hover:not(.active) { background: #e2e4e9; }
+
+  .wizard-progress { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .wizard-progress .step-dot {
+    display: flex; align-items: center; justify-content: center;
+    width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--border); color: var(--text-muted); font-size: 0.85rem; font-weight: 700;
+  }
+  .wizard-progress .step-dot.done { background: var(--good); border-color: var(--good); color: #fff; }
+  .wizard-progress .step-dot.current { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .wizard-progress .step-label { font-size: 0.85rem; color: var(--text-muted); }
+  .wizard-progress .step-label.current { color: var(--text); font-weight: 600; }
+  .wizard-progress .step-line { flex: 1; height: 2px; background: var(--border); min-width: 1rem; max-width: 2.5rem; }
+
+  .wizard-step[data-step] { display: none; }
+  body.mode-quick .wizard-step.active { display: block; }
+  body.mode-advanced .wizard-step { display: block !important; }
+  body.mode-advanced .wizard-progress, body.mode-advanced .wizard-nav { display: none; }
+  body.mode-quick #wizard-audit-btn { display: inline-flex; }
+  body.mode-advanced #wizard-audit-btn { display: none; }
+  body.mode-quick #audit-btn.advanced-only-audit { display: none; }
+  body.mode-advanced #wizard-results { display: none; }
+  body.mode-quick #save-row { display: none; }
+  body.mode-quick.wizard-guidance-ready #save-row { display: flex; }
+
+  .wizard-nav { display: flex; justify-content: space-between; margin: 1.1rem 0 1.75rem; }
+  body.mode-quick .quick-hide { display: none !important; }
+  body.mode-advanced .advanced-hide { display: none !important; }
+
+  /* --- Quick room chips --------------------------------------------------- */
+  .room-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.7rem 0 1rem; }
+  .room-chip {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
+    padding: 0.45rem 0.9rem; font-size: 0.85rem; font-weight: 600;
+  }
+  .room-chip:hover { border-color: var(--primary); color: var(--primary); }
+  .quick-room-list { margin: 0.4rem 0 1rem; }
+  .quick-room-row {
+    display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem;
+    background: #fafbfd; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.4rem;
+  }
+  .quick-room-row .qr-name { font-weight: 600; flex: 1; }
+  .quick-room-row .qr-status { font-size: 0.8rem; color: var(--text-muted); }
+  .quick-room-row .qr-status.marked { color: var(--good); }
+  details.advanced-toggle { margin-top: 1rem; }
+  details.advanced-toggle summary {
+    cursor: pointer; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;
+  }
+  details.advanced-toggle[open] summary { margin-bottom: 0.8rem; }
+
+  /* --- Friendly wizard results -------------------------------------------- */
+  .score-gauge {
+    display: flex; align-items: center; gap: 1.25rem; padding: 1rem 0 1.4rem;
+  }
+  .score-gauge .circle {
+    width: 6.5rem; height: 6.5rem; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; flex-direction: column; flex-shrink: 0; border: 6px solid var(--good);
+    color: var(--good);
+  }
+  .score-gauge .circle.amber { border-color: var(--minor); color: var(--minor); }
+  .score-gauge .circle.red { border-color: var(--major); color: var(--major); }
+  .score-gauge .circle .num { font-size: 1.9rem; font-weight: 800; line-height: 1; }
+  .score-gauge .circle .of100 { font-size: 0.65rem; color: var(--text-muted); }
+  .score-gauge .verdict { font-size: 1.05rem; font-weight: 700; }
+  .score-gauge .verdict-sub { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem; }
+
+  .guidance-card {
+    border-left: 4px solid var(--border); border-radius: 8px; background: #fafbfd;
+    padding: 0.8rem 1rem; margin: 0.6rem 0;
+  }
+  .guidance-card.major { border-color: var(--major); background: var(--major-soft); }
+  .guidance-card.minor { border-color: var(--minor); background: var(--minor-soft); }
+  .guidance-card .g-title { font-weight: 700; margin-bottom: 0.2rem; }
+  .guidance-card .g-remedy { font-size: 0.9rem; margin-top: 0.35rem; }
+  .zone-note { font-size: 0.85rem; color: var(--text-muted); margin: 0.2rem 0; }
+  .zone-note strong { color: var(--text); }
+
+  /* --- Printable report --------------------------------------------------- */
+  #print-report { display: none; }
+  #print-report .pr-header { border-bottom: 2px solid #000; padding-bottom: 0.6rem; margin-bottom: 1rem; }
+  #print-report .pr-header h1 { margin: 0 0 0.2rem; font-size: 1.4rem; }
+  #print-report .pr-score { font-size: 1.6rem; font-weight: 800; margin: 0.8rem 0; }
+  #print-report .pr-item { border-left: 3px solid #999; padding: 0.4rem 0.7rem; margin: 0.5rem 0; }
+  #print-report .pr-item.major { border-color: #000; }
+  #print-report .pr-footer { margin-top: 1.5rem; font-size: 0.78rem; color: #444; border-top: 1px solid #999; padding-top: 0.6rem; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #print-report, #print-report * { visibility: visible; }
+    #print-report { display: block; position: absolute; top: 0; left: 0; width: 100%; }
+  }
+
   @media (max-width: 560px) {
     .field-row { flex-direction: column; gap: 0.7rem; }
     .topbar { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+    .score-gauge { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
   }
 </style>
 </head>
@@ -251,12 +354,19 @@
       </div>
     </div>
 
+    <div class="mode-toggle">
+      <button type="button" id="mode-quick-btn" class="active">✨ Quick Guidance</button>
+      <button type="button" id="mode-advanced-btn">🛠 Advanced Editor</button>
+    </div>
+
+    <div class="wizard-progress" id="wizard-progress"></div>
+
     <div class="card">
       <h2>Saved flats</h2>
       <div id="flats-list" class="muted">Loading…</div>
     </div>
 
-    <div class="card">
+    <div class="card wizard-step" data-step="1">
       <h2>Your building / project</h2>
       <p class="muted">
         If your building already has a confirmed plan on record (e.g. sourced
@@ -314,7 +424,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card wizard-step" data-step="1">
       <h2>Trace your floor plan (recommended)</h2>
       <p class="muted">
         Turn a photo/scan of your blueprint — or just clicks on a plain grid — into
@@ -373,13 +483,14 @@
       <div id="trace-legend" class="trace-legend"></div>
     </div>
 
-    <div class="card">
+    <div class="card wizard-step" data-step="2">
       <h2>Plot</h2>
+      <p class="muted advanced-hide">Just a couple of quick questions — everything here has a sensible default if you're not sure.</p>
       <div class="field-row">
         <label>Shape
           <select id="plot-shape"></select>
         </label>
-        <label>Facade bearing (deg, true N=0)
+        <label class="quick-hide">Facade bearing (deg, true N=0)
           <input type="number" id="facade-bearing" value="0" step="0.1" style="width:6rem;">
         </label>
       </div>
@@ -394,9 +505,9 @@
           </label>
         </span>
       </div>
-      <p class="muted" style="margin-bottom:0.9rem;">Facade bearing only affects rooms with a polygon entered below.</p>
+      <p class="muted quick-hide" style="margin-bottom:0.9rem;">Facade bearing only affects rooms with a polygon entered below.</p>
 
-      <div id="boundary-wrap">
+      <div id="boundary-wrap" class="quick-hide">
         <label>Flat boundary polygon (JSON [[x,y],...] ft, optional):</label><br>
         <textarea id="plot-boundary" placeholder="e.g. [[0,0],[40,0],[40,27],[27,27],[27,41],[0,41]] — the L-shape / U-shape / whole outer wall trace"></textarea>
         <p class="muted">
@@ -408,6 +519,7 @@
           is unaffected either way.
         </p>
       </div>
+      <p class="muted" id="boundary-quick-note" style="display:none;"></p>
       <label style="display:flex; flex-direction:row; align-items:center; gap:0.4rem;">
         <input type="checkbox" id="include-ritual">
         Include traditional ritual/activation protocol with remedies
@@ -420,18 +532,43 @@
       </p>
     </div>
 
-    <div class="card">
+    <div class="card wizard-step" data-step="1">
       <h2>Rooms</h2>
-      <p class="muted">
-        For MasterBedroom / GuestBedroom / ChildrenBedroom / Kitchen / LivingRoom, you can
-        optionally enter the room's polygon to get a concrete furniture-placement suggestion
-        (bed/stove position, or the recommended heavy-furniture wall) alongside the zone audit.
+      <p class="muted advanced-hide">
+        Tap a room type below, then click its rough location on the plan you traced
+        above (scroll up if you need to). That's it — we work out its Vastu zone for
+        you from where you clicked. Add as many rooms as you like; even 3-4 key ones
+        (entrance, kitchen, main bedroom) already give useful guidance.
       </p>
-      <div id="rooms-container"></div>
-      <button id="add-room-btn" type="button">+ Add room</button>
+      <div class="room-chips advanced-hide" id="room-chips"></div>
+      <div class="quick-room-list advanced-hide" id="quick-room-list"></div>
+
+      <details class="advanced-toggle" id="advanced-rooms-details">
+        <summary>Advanced: edit the room list directly (zones, adjacency flags, polygons)</summary>
+        <p class="muted">
+          For MasterBedroom / GuestBedroom / ChildrenBedroom / Kitchen / LivingRoom, you can
+          optionally enter the room's polygon to get a concrete furniture-placement suggestion
+          (bed/stove position, or the recommended heavy-furniture wall) alongside the zone audit.
+        </p>
+        <div id="rooms-container"></div>
+        <button id="add-room-btn" type="button">+ Add room</button>
+      </details>
     </div>
 
-    <button id="audit-btn" class="primary" type="button">Audit (no save)</button>
+    <div class="wizard-nav" data-nav-for="1,2">
+      <button type="button" class="wizard-back-btn subtle">&larr; Back</button>
+      <button type="button" class="wizard-next-btn primary">Next &rarr;</button>
+    </div>
+
+    <div class="card wizard-step" data-step="3">
+      <h2>Review &amp; get your guidance</h2>
+      <p class="muted">Everything above is used to generate your Vastu guidance below. You can always come back and adjust it.</p>
+      <button id="wizard-audit-btn" class="primary" type="button" style="font-size:1rem; padding:0.7rem 1.5rem;">✨ Get My Vastu Guidance</button>
+    </div>
+
+    <button id="audit-btn" class="primary advanced-only-audit" type="button">Audit (no save)</button>
+
+    <div id="wizard-results"></div>
 
     <div id="save-row">
       <input type="text" id="flat-label" placeholder="Flat label (e.g. Unit 12)">
@@ -441,12 +578,17 @@
       <span id="save-status"></span>
     </div>
 
-    <div id="results"></div>
+    <details class="advanced-toggle wizard-step" data-step="3" id="full-report-details">
+      <summary>See full technical report (zone/adjacency violations, shape diagnosis, placement suggestions)</summary>
+      <div id="results"></div>
+    </details>
 
     <footer>
       Educational tool. Based on draft rule schema v0.2 pending consultant sign-off.
       Vastu is a traditional belief system, not empirically validated.
     </footer>
+
+    <div id="print-report"></div>
   </div>
 
 </div>
@@ -575,7 +717,7 @@ async function loadSchemaInfo() {
   });
 
   document.getElementById('add-room-btn').addEventListener('click', addRoomRow);
-  addRoomRow();
+  populateRoomChips();
 }
 
 function addRoomRow() {
@@ -593,6 +735,7 @@ function addRoomRow() {
     <select class="room-zone">${zoneOptions}</select>
     <span class="flags"></span>
     <button type="button" class="remove-btn subtle danger-text">Remove</button>
+    <input type="hidden" class="room-point">
     <div class="suggestion-extras">
       <label>Polygon (JSON [[x,y],...] ft):</label><br>
       <textarea class="room-polygon" placeholder="e.g. [[0,0],[12,0],[12,14],[0,14]]"></textarea>
@@ -608,9 +751,13 @@ function addRoomRow() {
 
   const typeSelect = row.querySelector('.room-type');
   typeSelect.addEventListener('change', () => updateFlags(row));
-  row.querySelector('.remove-btn').addEventListener('click', () => row.remove());
+  row.querySelector('.remove-btn').addEventListener('click', () => {
+    row.remove();
+    removeQuickRoomListEntryForRow(id);
+  });
 
   updateFlags(row);
+  return row;
 }
 
 function updateFlags(row) {
@@ -653,9 +800,19 @@ function assembleLayout() {
   const polygonErrors = [];
   document.querySelectorAll('.room-row').forEach(row => {
     const name = row.querySelector('.room-type').value;
-    const zone = row.querySelector('.room-zone').value;
     const adjacency_flags = [...row.querySelectorAll('.adjacency-flag:checked')].map(cb => cb.value);
-    const room = { name, zone };
+    const room = { name };
+
+    // Rows added via the quick-guidance chips (row.dataset.autoZone) never
+    // show the zone dropdown to the user at all -- sending its untouched
+    // default value as an "explicit" zone would stop the server from ever
+    // computing one from the marked point/polygon (see server.py's
+    // _auto_assign_zones: it only fills a MISSING zone, never overrides an
+    // explicit one). So those rows omit "zone" entirely and let the server
+    // work it out from geometry; every other row keeps today's behaviour.
+    if (row.dataset.autoZone !== '1') {
+      room.zone = row.querySelector('.room-zone').value;
+    }
     if (adjacency_flags.length) room.adjacency_flags = adjacency_flags;
 
     const polygonText = row.querySelector('.room-polygon').value.trim();
@@ -664,6 +821,14 @@ function assembleLayout() {
         room.polygon = JSON.parse(polygonText);
       } catch (e) {
         polygonErrors.push(`${name}: invalid polygon JSON (${e.message})`);
+      }
+    }
+    const pointText = row.querySelector('.room-point').value.trim();
+    if (!room.polygon && pointText) {
+      try {
+        room.point = JSON.parse(pointText);
+      } catch (e) {
+        polygonErrors.push(`${name}: invalid point JSON (${e.message})`);
       }
     }
     const width = parseFloat(row.querySelector('.dim-width').value);
@@ -848,6 +1013,7 @@ async function runAudit() {
   });
   const result = await resp.json();
   renderResults(result);
+  renderWizardResults(result);
 }
 
 // --- Persistence: save / list / load flats -------------------------------
@@ -905,6 +1071,8 @@ async function loadFlatIntoForm(flatId) {
   setSaveStatus(`Loaded "${flat.label}" (v${latest.version_number}, ${flat.versions.length} version(s) total). Edit and save to add a new version.`, false);
 
   renderResults(latest.result);
+  renderWizardResults(latest.result);
+  document.body.classList.add('wizard-guidance-ready');
 }
 
 function populateFormFromInput(input) {
@@ -932,6 +1100,8 @@ function populateFormFromInput(input) {
     });
     if (room.polygon) {
       row.querySelector('.room-polygon').value = JSON.stringify(room.polygon);
+    } else if (room.point) {
+      row.querySelector('.room-point').value = JSON.stringify(room.point);
     }
     const dims = furnitureDims[room.name];
     if (dims) {
@@ -941,11 +1111,299 @@ function populateFormFromInput(input) {
   });
   if (!(input.rooms || []).length) addRoomRow();
 
-  // The trace canvas/legend can't reconstruct a loaded flat's original click
-  // points (only the final feet polygons were saved), so just clear the
-  // client-side trace bookkeeping rather than show a stale/wrong legend.
+  // The trace canvas/legend/quick-room-list can't reconstruct a loaded
+  // flat's original click points (only the final feet polygons/points were
+  // saved), so just clear the client-side bookkeeping rather than show a
+  // stale/wrong legend or checklist -- the loaded rooms are still fully
+  // present in the (advanced) room list above, just not re-drawn on canvas.
   clearTraceUiState();
   setTraceStatus('Loaded a saved flat. Its boundary/room polygons are in the fields below (not re-drawn here) — re-trace or hand-edit the JSON if you want to change them.');
+}
+
+// ---------------------------------------------------------------------------
+// Quick-guidance wizard: mode toggle, step navigation, room-type chips, and
+// friendly (non-technical) results + a printable report. None of this adds
+// new audit logic -- it's a guided front-end over the exact same
+// assembleLayout()/runAudit()/renderResults() pipeline the advanced editor
+// uses; a room added via a chip is a completely normal room-row (see
+// addRoomRow()), just pre-filled and marked with a single click instead of
+// hand-typed. The one real engine-facing addition is that these rows omit
+// "zone" entirely (row.dataset.autoZone, see assembleLayout()) so the
+// server computes it from the marked point/polygon (server.py's
+// _auto_assign_zones) instead of requiring the user to already know it.
+// ---------------------------------------------------------------------------
+
+//: Curated, common-first subset of schemaInfo.room_types shown as chips --
+//: not every schema room type (e.g. OverheadWaterTank, SepticTank) is
+//: relevant to a quick home audit; the full list stays one click away via
+//: "Advanced: edit the room list directly".
+const COMMON_ROOM_TYPES = [
+  'MainEntrance', 'Kitchen', 'MasterBedroom', 'LivingRoom', 'ChildrenBedroom',
+  'GuestBedroom', 'Toilet', 'PoojaRoom', 'DiningRoom', 'StudyRoom', 'Staircase',
+];
+
+function populateRoomChips() {
+  const available = COMMON_ROOM_TYPES.filter(t => schemaInfo.room_types.includes(t));
+  const el = document.getElementById('room-chips');
+  el.innerHTML = available.map(t => `<button type="button" class="room-chip" data-room-type="${t}">+ ${t}</button>`).join('');
+  el.querySelectorAll('.room-chip').forEach(btn => {
+    btn.addEventListener('click', () => addQuickRoom(btn.dataset.roomType));
+  });
+  renderQuickRoomList();
+}
+
+function addQuickRoom(roomType) {
+  const row = addRoomRow();
+  row.dataset.autoZone = '1';
+  row.querySelector('.room-type').value = roomType;
+  updateFlags(row);
+  quickRooms.push({ rowId: row.dataset.id, name: roomType });
+  renderQuickRoomList();
+  startRoomPointMode(roomType, row.dataset.id);
+}
+
+function removeQuickRoom(rowId) {
+  const row = document.querySelector(`.room-row[data-id="${rowId}"]`);
+  if (row) row.remove();
+  removeQuickRoomListEntryForRow(rowId);
+}
+
+// Also called when a room is removed via the advanced list's own "Remove"
+// button (see addRoomRow()), so the quick checklist never goes stale
+// regardless of which UI the row was removed from.
+function removeQuickRoomListEntryForRow(rowId) {
+  quickRooms = quickRooms.filter(qr => String(qr.rowId) !== String(rowId));
+  const idx = pointRooms.findIndex(p => String(p.rowId) === String(rowId));
+  if (idx !== -1) pointRooms.splice(idx, 1);
+  renderQuickRoomList();
+  redrawTrace();
+}
+
+function renderQuickRoomList() {
+  const el = document.getElementById('quick-room-list');
+  if (!el) return;
+  if (!quickRooms.length) {
+    el.innerHTML = '<p class="muted">No rooms added yet — tap a room type above to start.</p>';
+    return;
+  }
+  el.innerHTML = quickRooms.map(qr => {
+    const row = document.querySelector(`.room-row[data-id="${qr.rowId}"]`);
+    const marked = !!(row && row.querySelector('.room-point').value);
+    return `
+      <div class="quick-room-row">
+        <span class="qr-name">${qr.name}</span>
+        <span class="qr-status ${marked ? 'marked' : ''}">${marked ? '✓ Marked' : 'Not marked yet'}</span>
+        <button type="button" class="subtle qr-mark-btn" data-row-id="${qr.rowId}" data-room-type="${qr.name}">${marked ? 'Re-mark' : 'Mark on plan'}</button>
+        <button type="button" class="subtle danger-text qr-remove-btn" data-row-id="${qr.rowId}">Remove</button>
+      </div>`;
+  }).join('');
+  el.querySelectorAll('.qr-mark-btn').forEach(btn => {
+    btn.addEventListener('click', () => startRoomPointMode(btn.dataset.roomType, btn.dataset.rowId));
+  });
+  el.querySelectorAll('.qr-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeQuickRoom(btn.dataset.rowId));
+  });
+}
+
+// --- Mode toggle (Quick guidance <-> Advanced editor) -----------------------
+
+let currentMode = 'quick';
+
+function setMode(mode) {
+  currentMode = mode;
+  document.body.classList.toggle('mode-quick', mode === 'quick');
+  document.body.classList.toggle('mode-advanced', mode === 'advanced');
+  document.getElementById('mode-quick-btn').classList.toggle('active', mode === 'quick');
+  document.getElementById('mode-advanced-btn').classList.toggle('active', mode === 'advanced');
+  if (mode === 'advanced') {
+    // The advanced editor expects its familiar "always one row to start"
+    // feel; the wizard instead starts empty and relies on the chips.
+    if (!document.querySelector('.room-row')) addRoomRow();
+    const details = document.getElementById('full-report-details');
+    if (details) details.open = true;
+    goToWizardStep(1); // harmless in advanced mode (CSS ignores step-gating there)
+  } else {
+    goToWizardStep(currentWizardStep || 1);
+  }
+}
+
+document.getElementById('mode-quick-btn').addEventListener('click', () => setMode('quick'));
+document.getElementById('mode-advanced-btn').addEventListener('click', () => setMode('advanced'));
+
+// --- Wizard step navigation --------------------------------------------------
+
+const WIZARD_STEPS = [
+  { n: 1, label: 'Draw your flat & rooms' },
+  { n: 2, label: 'A few basics' },
+  { n: 3, label: 'Your guidance' },
+];
+const LAST_WIZARD_STEP = WIZARD_STEPS[WIZARD_STEPS.length - 1].n;
+
+let currentWizardStep = 1;
+
+function renderWizardProgress() {
+  const el = document.getElementById('wizard-progress');
+  el.innerHTML = WIZARD_STEPS.map((s, i) => {
+    const state = s.n < currentWizardStep ? 'done' : (s.n === currentWizardStep ? 'current' : '');
+    const dot = `<span class="step-dot ${state}">${s.n < currentWizardStep ? '✓' : s.n}</span>`;
+    const label = `<span class="step-label ${s.n === currentWizardStep ? 'current' : ''}">${s.label}</span>`;
+    const line = i < WIZARD_STEPS.length - 1 ? '<span class="step-line"></span>' : '';
+    return dot + label + line;
+  }).join('');
+}
+
+function goToWizardStep(n) {
+  currentWizardStep = n;
+  document.querySelectorAll('.wizard-step[data-step]').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.step, 10) === n);
+  });
+  const nav = document.querySelector('.wizard-nav');
+  if (nav) {
+    nav.classList.toggle('hidden', n >= LAST_WIZARD_STEP);
+    nav.querySelector('.wizard-back-btn').disabled = n <= 1;
+  }
+  renderWizardProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.querySelector('.wizard-back-btn').addEventListener('click', () => goToWizardStep(Math.max(1, currentWizardStep - 1)));
+document.querySelector('.wizard-next-btn').addEventListener('click', () => goToWizardStep(Math.min(LAST_WIZARD_STEP, currentWizardStep + 1)));
+
+document.getElementById('wizard-audit-btn').addEventListener('click', async () => {
+  await runAudit();
+  document.body.classList.add('wizard-guidance-ready');
+  document.getElementById('wizard-results').scrollIntoView({ behavior: 'smooth' });
+});
+
+// --- Friendly (non-technical) results -----------------------------------
+
+function scoreBand(score) {
+  if (score >= 80) return { cls: '', verdict: 'Looking good' };
+  if (score >= 50) return { cls: 'amber', verdict: 'Room for improvement' };
+  return { cls: 'red', verdict: 'Needs attention' };
+}
+
+//: Every rule_type this UI can turn into a plain-language sentence. Falls
+//: back to the raw remedy/violation text for anything not listed here --
+//: never silently drops a real finding just because it lacks a friendly
+//: template.
+function friendlyTitle(v) {
+  const room = v.room ? `Your ${v.room}` : 'Your plot';
+  switch (v.rule_type) {
+    case 'zone': return `${room} is in a zone (${v.violation}) that's best avoided for this room type.`;
+    case 'adjacency': return `${room} has a layout issue: ${v.violation}.`;
+    case 'brahmasthan_obstruction': return `${room} sits over your home's central zone (Brahmasthan).`;
+    case 'hollow_center': return `Your flat's true centre falls outside its own outline (a hollow/external centre).`;
+    case 'missing_zone': return `A corner of your flat (${v.violation}) is cut away.`;
+    case 'plot_shape': return `Your plot's overall shape (${v.violation}) is considered irregular.`;
+    case 'floor_slope': return `Your floor slope doesn't match the traditional preference.`;
+    case 'object_placement': return `${room}: ${v.violation}.`;
+    default: return `${room}: ${v.violation || v.rule_type}`;
+  }
+}
+
+function renderWizardResults(result) {
+  const el = document.getElementById('wizard-results');
+  if (!result) { el.innerHTML = ''; return; }
+
+  const band = scoreBand(result.compliance_score);
+  const allViolations = [];
+  (result.rooms || []).forEach(r => r.violations.forEach(v => { if (v.severity) allViolations.push(v); }));
+  (result.plot_level || []).forEach(v => allViolations.push(v));
+  (result.shape_defect_violations || []).forEach(v => allViolations.push(v));
+  (result.brahmasthan_violations || []).forEach(v => allViolations.push(v));
+  allViolations.sort((a, b) => (a.severity === b.severity) ? 0 : (a.severity === 'major' ? -1 : 1));
+
+  const topIssues = allViolations.slice(0, 5);
+  const remaining = allViolations.length - topIssues.length;
+
+  const autoZoneNotes = (result.resolved_rooms || []).filter(r => r.zone_source === 'auto' && r.zone);
+
+  let html = '<div class="card">';
+  html += `<div class="score-gauge">
+    <div class="circle ${band.cls}"><span class="num">${result.compliance_score}</span><span class="of100">/ 100</span></div>
+    <div>
+      <div class="verdict">${band.verdict}</div>
+      <div class="verdict-sub">${result.major_count} major and ${result.minor_count} minor point(s) found. This is a relative indicator (placeholder weights), not an authoritative percentage.</div>
+    </div>
+  </div>`;
+
+  if (autoZoneNotes.length) {
+    html += autoZoneNotes.map(r =>
+      `<div class="zone-note">📍 We placed <strong>${r.name}</strong> in the <strong>${r.zone}</strong> zone, based on where you marked it.</div>`
+    ).join('');
+  }
+
+  if (topIssues.length === 0) {
+    html += `<p class="muted" style="margin-top:0.9rem;">No issues found in what you've entered so far — nice! Add more rooms above for a fuller picture, or print this report.</p>`;
+  } else {
+    html += `<h3 class="section-title">Top things to improve</h3>`;
+    topIssues.forEach(v => {
+      html += `<div class="guidance-card ${v.severity}">
+        <div class="g-title">${friendlyTitle(v)}</div>
+        ${v.remedy ? `<div class="g-remedy">${v.remedy}</div>` : ''}
+        ${renderRitual(v.ritual)}
+      </div>`;
+    });
+    if (remaining > 0) {
+      html += `<p class="muted">+ ${remaining} more finding(s) in the full technical report below.</p>`;
+    }
+  }
+
+  html += `<div style="margin-top:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
+    <button type="button" class="primary" id="print-report-btn">🖨 Print / Save as PDF</button>
+  </div>`;
+  html += '</div>';
+  el.innerHTML = html;
+
+  const printBtn = document.getElementById('print-report-btn');
+  if (printBtn) printBtn.addEventListener('click', () => printReport(result));
+}
+
+// --- Printable report --------------------------------------------------
+
+function printReport(result) {
+  const el = document.getElementById('print-report');
+  const band = scoreBand(result.compliance_score);
+  const label = document.getElementById('flat-label').value.trim() || 'Your home';
+  const today = new Date().toLocaleDateString();
+
+  const allViolations = [];
+  (result.rooms || []).forEach(r => r.violations.forEach(v => { if (v.severity) allViolations.push(v); }));
+  (result.plot_level || []).forEach(v => allViolations.push(v));
+  (result.shape_defect_violations || []).forEach(v => allViolations.push(v));
+  (result.brahmasthan_violations || []).forEach(v => allViolations.push(v));
+  allViolations.sort((a, b) => (a.severity === b.severity) ? 0 : (a.severity === 'major' ? -1 : 1));
+
+  let html = `
+    <div class="pr-header">
+      <h1>InterVastu — Vastu Guidance Report</h1>
+      <div>${label} — generated ${today}</div>
+    </div>
+    <div class="pr-score">Compliance score: ${result.compliance_score} / 100 (${band.verdict})</div>
+    <p>${result.major_count} major and ${result.minor_count} minor point(s) found. Score uses placeholder severity weights (major=10, minor=3), not schema-derived or consultant-validated — a relative indicator, not an authoritative percentage.</p>
+  `;
+
+  if (allViolations.length === 0) {
+    html += '<p>No scored issues found in the information provided.</p>';
+  } else {
+    html += '<h3>Findings and remedies</h3>';
+    allViolations.forEach(v => {
+      html += `<div class="pr-item ${v.severity}">
+        <strong>${friendlyTitle(v)}</strong> (${v.severity})<br>
+        ${v.remedy || ''}
+      </div>`;
+    });
+  }
+
+  html += `<div class="pr-footer">
+    Educational tool. Based on draft rule schema v0.2 pending consultant sign-off.
+    Vastu is a traditional belief system, not empirically validated. This report
+    reflects the room/plot information supplied at the time it was generated.
+  </div>`;
+
+  el.innerHTML = html;
+  window.print();
 }
 
 async function saveNewFlat() {
@@ -976,6 +1434,7 @@ async function saveNewFlat() {
   document.getElementById('save-version-btn').disabled = false;
   setSaveStatus(`Saved as new flat #${body.flat_id}, version ${body.version}.`, false);
   renderResults(body.result);
+  renderWizardResults(body.result);
   loadFlatsList();
 }
 
@@ -1004,6 +1463,7 @@ async function saveVersion() {
   const body = await resp.json();
   setSaveStatus(`Saved as version ${body.version} of flat #${loadedFlatId}.`, false);
   renderResults(body.result);
+  renderWizardResults(body.result);
   loadFlatsList();
 }
 
@@ -1199,6 +1659,16 @@ let boundaryShape = null;   // { pxPoints, feetPoints } or null
 let tracedRooms = [];       // [{ id, name, pxPoints, feetPoints }]
 let traceIdCounter = 0;
 
+// --- Quick-guidance wizard: "mark a room" (single click, not a full trace) ---
+// A much lower-effort alternative to tracedRooms' multi-point polygon trace:
+// one click stands in for the whole room, wrapped server-side into a tiny
+// square just so zone_geometry has a polygon to compute a bearing from (see
+// server.py's _auto_assign_zones). Never fed to suggestions.py's solver,
+// which still needs a real traced polygon for a placement suggestion.
+let pointRooms = [];        // [{ id, rowId, name, pxPoint, feetPoint }]
+let quickRooms = [];        // [{ rowId, name }] -- the wizard's room checklist
+let pendingPointRoom = null; // { roomType, rowId } while traceMode === 'room_point'
+
 function setTraceStatus(msg) {
   document.getElementById('trace-status').textContent = msg;
 }
@@ -1324,6 +1794,19 @@ function drawPolygon(pxPoints, color, closed, label) {
   }
 }
 
+function drawPointMarker(pxPoint, color, label) {
+  const ctx = traceCtx;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(pxPoint[0], pxPoint[1], 6, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(label, pxPoint[0] + 9, pxPoint[1] - 8);
+}
+
 function redrawTrace() {
   const ctx = traceCtx;
   ctx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
@@ -1344,6 +1827,7 @@ function redrawTrace() {
 
   if (boundaryShape) drawPolygon(boundaryShape.pxPoints, '#c0392b', true, 'Boundary');
   tracedRooms.forEach((r, i) => drawPolygon(r.pxPoints, ROOM_COLORS[i % ROOM_COLORS.length], true, r.name));
+  pointRooms.forEach(r => drawPointMarker(r.pxPoint, '#2e5aac', r.name));
 
   if (draftPoints.length) {
     const color = traceMode === 'boundary' ? '#c0392b' : ROOM_COLORS[tracedRooms.length % ROOM_COLORS.length];
@@ -1392,6 +1876,26 @@ function handleTracePoint(clientX, clientY) {
     return;
   }
 
+  if (traceMode === 'room_point') {
+    const feetPoint = pxToFeet(x, y);
+    const { rowId, roomType } = pendingPointRoom;
+    const row = document.querySelector(`.room-row[data-id="${rowId}"]`);
+    if (row) row.querySelector('.room-point').value = JSON.stringify(feetPoint);
+    const existingIdx = pointRooms.findIndex(p => String(p.rowId) === String(rowId));
+    const entry = { id: traceIdCounter++, rowId, name: roomType, pxPoint: [x, y], feetPoint };
+    if (existingIdx !== -1) pointRooms[existingIdx] = entry; else pointRooms.push(entry);
+
+    traceMode = 'idle';
+    pendingPointRoom = null;
+    traceCanvas.classList.remove('mode-active');
+    document.getElementById('cancel-shape-btn').classList.add('hidden');
+    renderQuickRoomList();
+    renderTraceLegend();
+    redrawTrace();
+    setTraceStatus(`${roomType} marked. Tap another room chip below, or continue once you've added the rooms you care about.`);
+    return;
+  }
+
   if (traceMode === 'boundary' || traceMode === 'room') {
     draftPoints.push([x, y]);
     document.getElementById('finish-shape-btn').classList.toggle('hidden', draftPoints.length < 3);
@@ -1399,6 +1903,21 @@ function handleTracePoint(clientX, clientY) {
     setTraceStatus(`${draftPoints.length} point(s) placed. Keep clicking around the ${what}, then "Finish shape" (need at least 3 points).`);
     redrawTrace();
   }
+}
+
+function startRoomPointMode(roomType, rowId) {
+  if (draftPoints.length > 0 && (traceMode === 'boundary' || traceMode === 'room')) {
+    if (!confirm(`Discard the ${draftPoints.length}-point trace in progress and mark ${roomType} instead?`)) return;
+  }
+  traceMode = 'room_point';
+  pendingPointRoom = { roomType, rowId };
+  draftPoints = [];
+  calibPoints = [];
+  document.getElementById('finish-shape-btn').classList.add('hidden');
+  document.getElementById('cancel-shape-btn').classList.remove('hidden');
+  traceCanvas.classList.add('mode-active');
+  setTraceStatus(`Tap where the ${roomType} roughly is on the plan above.`);
+  redrawTrace();
 }
 
 traceCanvas.addEventListener('click', (evt) => handleTracePoint(evt.clientX, evt.clientY));
@@ -1463,6 +1982,7 @@ function cancelShape() {
   draftPoints = [];
   calibPoints = [];
   traceMode = 'idle';
+  pendingPointRoom = null;
   traceCanvas.classList.remove('mode-active');
   document.getElementById('finish-shape-btn').classList.add('hidden');
   document.getElementById('cancel-shape-btn').classList.add('hidden');
@@ -1483,11 +2003,14 @@ function undoLastPoint() {
 function resetTracing() {
   boundaryShape = null;
   tracedRooms = [];
+  pointRooms = [];
   draftPoints = [];
   calibPoints = [];
   traceMode = 'idle';
+  pendingPointRoom = null;
   document.getElementById('plot-boundary').value = '';
   renderTraceLegend();
+  renderQuickRoomList();
   redrawTrace();
   setTraceStatus('Tracing cleared. Previously added room rows below were left as-is — remove them there if you no longer need them.');
 }
@@ -1495,10 +2018,14 @@ function resetTracing() {
 function clearTraceUiState() {
   boundaryShape = null;
   tracedRooms = [];
+  pointRooms = [];
+  quickRooms = [];
   draftPoints = [];
   calibPoints = [];
   traceMode = 'idle';
+  pendingPointRoom = null;
   renderTraceLegend();
+  renderQuickRoomList();
   redrawTrace();
 }
 
@@ -1519,6 +2046,18 @@ function removeTracedRoom(id) {
   redrawTrace();
 }
 
+function removePointRoom(id) {
+  const idx = pointRooms.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const { rowId } = pointRooms[idx];
+  pointRooms.splice(idx, 1);
+  const row = document.querySelector(`.room-row[data-id="${rowId}"]`);
+  if (row) row.querySelector('.room-point').value = '';
+  renderQuickRoomList();
+  renderTraceLegend();
+  redrawTrace();
+}
+
 function renderTraceLegend() {
   const el = document.getElementById('trace-legend');
   let html = '';
@@ -1528,10 +2067,14 @@ function renderTraceLegend() {
   tracedRooms.forEach((r, i) => {
     html += `<div class="legend-row"><span class="swatch" style="background:${ROOM_COLORS[i % ROOM_COLORS.length]};"></span> ${r.name} (${r.feetPoints.length} pts) <button type="button" class="legend-remove" data-kind="room" data-id="${r.id}">Remove</button></div>`;
   });
+  pointRooms.forEach(r => {
+    html += `<div class="legend-row"><span class="swatch" style="background:#2e5aac;"></span> ${r.name} (marked point) <button type="button" class="legend-remove" data-kind="point" data-id="${r.id}">Remove</button></div>`;
+  });
   el.innerHTML = html;
   el.querySelectorAll('.legend-remove').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.kind === 'boundary') removeBoundaryTrace();
+      else if (btn.dataset.kind === 'point') removePointRoom(parseInt(btn.dataset.id, 10));
       else removeTracedRoom(parseInt(btn.dataset.id, 10));
     });
   });
@@ -1615,11 +2158,13 @@ window.addEventListener('touchend', () => { compassDragging = false; });
 
 initGrid();
 renderTraceLegend();
+renderQuickRoomList();
 
 document.getElementById('audit-btn').addEventListener('click', runAudit);
 document.getElementById('save-new-btn').addEventListener('click', saveNewFlat);
 document.getElementById('save-version-btn').addEventListener('click', saveVersion);
 
+setMode('quick');
 checkSession();
 </script>
 
