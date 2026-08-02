@@ -22,7 +22,8 @@ http://127.0.0.1:8000/
 
 Register an account (username + password) on first visit — everything
 past the login screen requires being logged in, except the stateless
-one-off `/audit` endpoint.
+one-off `/audit` endpoint. You'll land in **Quick Guidance** mode (see
+below); switch to **Advanced Editor** any time via the toggle at the top.
 
 Cookies are marked `Secure` (HTTPS-only) by default. Running locally over
 plain `http://127.0.0.1` needs `VASTU_UI_INSECURE_COOKIES=1` set before
@@ -41,6 +42,66 @@ VASTU_UI_INSECURE_COOKIES=1 uvicorn ui.server:app --reload
   hardcoded.
 - The compliance score uses placeholder severity weights defined in the
   engine (major=10, minor=3) — not schema-derived, not consultant-validated.
+
+## Quick Guidance wizard (low-input mode for naive users)
+
+The mode toggle at the top of the page switches between two views over the
+exact same underlying form/audit pipeline — neither adds audit logic the
+other doesn't have; they differ only in how much is asked of the user and
+how the result is presented:
+
+- **✨ Quick Guidance** (default): a 3-step wizard — *Draw your flat & rooms*,
+  *A few basics*, *Your guidance* — that asks for the minimum a useful audit
+  needs: trace the outline, tap a room-type chip and click roughly where it
+  is, answer two yes/no questions, then get a plain-language report. All the
+  detailed controls (adjacency flags, polygons, furniture dimensions) are
+  still there, one click away behind "Advanced: edit the room list
+  directly".
+- **🛠 Advanced Editor**: today's original all-fields-at-once page, unchanged,
+  for anyone who wants direct control over every field.
+
+### Automatic zone assignment — the actual point of the wizard
+
+Before this, the single hardest thing this UI asked of a non-expert user was
+to already **know** each room's Vastu compass zone (N/NE/E/.../NW) and pick
+it from a dropdown — real Vastu-consultant knowledge, not something you can
+answer by looking at your own flat. `genesis/engine/zone_geometry.py`'s
+`analyze_zones()` (Phase 1b, deterministic, Brahmasthan-relative zone
+assignment, 25 tests) already computed this correctly from geometry, but no
+part of this UI actually called it until now.
+
+`server.py`'s `_auto_assign_zones` wires it in: any room that supplies a
+`"polygon"` (a full trace) or just a `"point"` (a single click marking
+roughly where the room is) but no explicit `"zone"` gets one computed from
+its bearing off the flat boundary's true centroid, tagged
+`"zone_source": "auto"` in the response's new `resolved_rooms` field (every
+room's `{name, zone, zone_source}`, whether or not it had a violation, so
+the UI can always show which zone was actually used — including for a fully
+compliant room). A room that already specifies a zone is never overridden.
+A "point" room is wrapped server-side into a tiny (1 ft) square purely so
+`analyze_zones` has a polygon with a centroid to compute a bearing from —
+it is never passed to `suggestions.py`'s solver, which still needs a real
+traced polygon for a placement suggestion.
+
+In the wizard, clicking a room-type chip adds a room row (the same
+`addRoomRow()` the advanced editor uses) with its zone dropdown intentionally
+unused (`row.dataset.autoZone`, see `assembleLayout()`) and starts a
+single-click "mark its spot" mode on the same tracing canvas — a much lower
+bar than tracing a full room polygon. Marked points are drawn on the canvas
+and listed in both the wizard's room checklist and the advanced tracing
+tool's legend, so switching modes never loses information.
+
+### Printable report
+
+Once the wizard generates guidance, "🖨 Print / Save as PDF" builds a clean,
+report-only view (`#print-report`, shown only under `@media print` — the
+CSS hides everything else on the page) and calls the browser's native
+print dialog, which any browser can also save as a PDF. No new dependency —
+this is plain CSS + `window.print()`, consistent with the rest of the app's
+no-build-step, no-server-side-rendering approach. The report includes the
+score, a plain-language list of findings with their remedies, and the usual
+disclaimer footer; it reflects whatever was audited most recently, so
+re-audit before re-printing if you've changed anything.
 
 ## Auth
 
@@ -167,8 +228,9 @@ without hand-typing coordinate JSON:
    to commit the boundary — this writes straight into the `#plot-boundary`
    field above.
 4. Pick a room type, click around its walls, "Finish shape" — this adds a
-   new row to the Rooms list below with that room's polygon pre-filled (you
-   still pick its compass zone there; tracing does not compute the zone).
+   new row to the Rooms list below with that room's polygon pre-filled. Its
+   compass zone is no longer something you have to know or pick yourself —
+   see "Quick Guidance wizard" below for how that's computed automatically.
    Repeat for each room.
 5. Drag the compass needle to set which way is North on the plan; this
    writes into the existing "Facade bearing" field, using the exact same

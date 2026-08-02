@@ -504,3 +504,129 @@ def test_get_project_version_404_for_missing_version(admin_client):
 
     resp = admin_client.get(f"/projects/{project_id}/versions/99")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Automatic zone assignment (_auto_assign_zones): wires zone_geometry's
+# deterministic Brahmasthan-relative zone computation into the audit path,
+# so a room with a traced polygon or a single marked point -- but no
+# explicit "zone" -- gets one computed instead of requiring the caller to
+# already know it. This is the backbone of the low-input wizard flow.
+# ---------------------------------------------------------------------------
+
+SQUARE_BOUNDARY = [[0, 0], [40, 0], [40, 40], [0, 40]]
+
+
+def test_room_with_polygon_and_no_zone_gets_one_computed(client):
+    layout = {
+        "plot": {},
+        "boundary": SQUARE_BOUNDARY,
+        "rooms": [{"name": "Kitchen", "polygon": [[30, 30], [40, 30], [40, 40], [30, 40]]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    body = resp.json()
+    resolved = {r["name"]: r for r in body["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] == "NE"
+    assert resolved["Kitchen"]["zone_source"] == "auto"
+
+
+def test_room_with_single_point_and_no_zone_gets_one_computed(client):
+    """A single click (one [x, y] point, not a full traced polygon) is
+    enough -- the wizard's fast "just mark its spot" path."""
+    layout = {
+        "plot": {},
+        "boundary": SQUARE_BOUNDARY,
+        "rooms": [{"name": "Kitchen", "point": [35, 35]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    resolved = {r["name"]: r for r in resp.json()["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] == "NE"
+    assert resolved["Kitchen"]["zone_source"] == "auto"
+
+
+def test_explicit_zone_is_never_overridden_by_geometry(client):
+    layout = {
+        "plot": {},
+        "boundary": SQUARE_BOUNDARY,
+        # Point geometrically says NE, but the caller explicitly picked SW --
+        # the explicit choice must win, no auto-computation attempted at all.
+        "rooms": [{"name": "Kitchen", "zone": "SW", "point": [35, 35]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    resolved = {r["name"]: r for r in resp.json()["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] == "SW"
+    assert resolved["Kitchen"]["zone_source"] is None
+
+
+def test_computed_zone_feeds_the_real_scored_audit(client):
+    """Not just cosmetic -- the auto-computed zone is the one actually
+    checked against the schema's forbidden-zone rules."""
+    layout = {
+        "plot": {},
+        "boundary": SQUARE_BOUNDARY,
+        # (35, 35): dx=15, dy=15 off the (20,20) centre -> NE, forbidden/major for Toilet.
+        "rooms": [{"name": "Toilet", "point": [35, 35]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    body = resp.json()
+    resolved = {r["name"]: r for r in body["resolved_rooms"]}
+    assert resolved["Toilet"]["zone"] == "NE"
+    assert body["major_count"] >= 1
+
+
+def test_no_zone_computed_without_a_boundary(client):
+    """Without a plot boundary there is no Brahmasthan centre to measure
+    from -- the room simply keeps no zone (audit_room's existing, non-error
+    "no zone check for this room" behaviour), not a guess."""
+    layout = {
+        "plot": {},
+        "rooms": [{"name": "Kitchen", "point": [35, 35]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    resolved = {r["name"]: r for r in resp.json()["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] is None
+    assert resolved["Kitchen"]["zone_source"] is None
+
+
+def test_malformed_boundary_does_not_break_zone_auto_assignment_or_audit(client):
+    layout = {
+        "plot": {},
+        "boundary": "not a boundary",
+        "rooms": [{"name": "Kitchen", "point": [35, 35]}],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "compliance_score" in body
+    resolved = {r["name"]: r for r in body["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] is None
+
+
+def test_malformed_point_for_one_room_does_not_break_others(client):
+    layout = {
+        "plot": {},
+        "boundary": SQUARE_BOUNDARY,
+        "rooms": [
+            {"name": "Kitchen", "point": "garbage"},
+            {"name": "Toilet", "point": [5, 35]},
+        ],
+    }
+    resp = client.post("/audit", json=layout)
+    assert resp.status_code == 200
+    resolved = {r["name"]: r for r in resp.json()["resolved_rooms"]}
+    assert resolved["Kitchen"]["zone"] is None
+    assert resolved["Toilet"]["zone"] == "NW"
+
+
+def test_resolved_rooms_present_even_with_no_geometry_at_all(client):
+    """resolved_rooms always reflects the zone actually used for the
+    audit -- including the plain manual-zone-pick path with no geometry."""
+    resp = client.post("/audit", json=COMPLIANT_LAYOUT)
+    assert resp.status_code == 200
+    resolved = resp.json()["resolved_rooms"]
+    assert resolved == [{"name": "Kitchen", "zone": "SE", "zone_source": None}]

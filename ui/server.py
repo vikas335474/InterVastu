@@ -122,6 +122,88 @@ def get_current_user(
     return user
 
 
+#: Half-width (ft) of the tiny square substituted for a room given only as a
+#: single point (see _auto_assign_zones) -- small enough to be a negligible
+#: sliver of any real room, just enough for Shapely to accept it as a polygon
+#: with a well-defined centroid/bearing. Not a Vastu constant, a geometry
+#: implementation detail of the point -> polygon stand-in.
+_POINT_ROOM_HALF_WIDTH_FT = 0.5
+
+
+def _auto_assign_zones(rooms: list, boundary, facade_bearing_deg: float) -> None:
+    """Fill in each room's compass "zone" from geometry, wiring
+    zone_geometry.analyze_zones (Phase 1b's deterministic, Brahmasthan-
+    relative zone assignment -- 25 tests, previously built but never called
+    from this UI) into the audit path for the first time.
+
+    Before this, a caller had to already KNOW and type each room's Vastu
+    zone by hand, which is arguably the single hardest thing to ask of a
+    naive user (see the wizard flow in index.html, the reason this exists).
+    Now a room that supplies a "polygon" (a real traced outline) or just a
+    "point" (a single [x, y] -- e.g. one click marking roughly where the
+    room is) but no explicit "zone" gets one computed from its bearing off
+    the flat boundary's true centroid.
+
+    Mutates `rooms` IN PLACE so the caller's persisted input reflects the
+    computed zone too, and tags each computed entry with
+    `"zone_source": "auto"` so a caller/UI can distinguish it from a zone
+    the user picked directly. A room that already specifies "zone" is left
+    completely alone -- this only fills gaps, never overrides an explicit
+    choice.
+
+    Requires `boundary` (there is no Brahmasthan centre to measure bearings
+    from without it); without it, or on any malformed boundary/room
+    geometry, this silently does nothing -- rooms keep whatever zone they
+    already have (usually none), which audit_room already treats as "no
+    zone check for this room," not an error. Same "one bad geometry field
+    must not take down the whole audit" posture already applied to
+    shape_diagnosis below.
+
+    A "point" room is wrapped into a tiny square (see
+    _POINT_ROOM_HALF_WIDTH_FT) purely so analyze_zones has a polygon with a
+    centroid to compute a bearing from -- this square is never passed to
+    suggestions.py's solver, which still requires a real traced polygon for
+    a placement suggestion.
+    """
+    if not boundary:
+        return
+
+    geometry_rooms = []
+    indices = []
+    for i, room in enumerate(rooms):
+        if room.get("zone"):
+            continue
+        polygon = room.get("polygon")
+        point = room.get("point")
+        if polygon:
+            geometry_rooms.append((str(i), polygon))
+            indices.append(i)
+        elif point:
+            try:
+                x, y = float(point[0]), float(point[1])
+            except (TypeError, ValueError, IndexError, KeyError):
+                continue
+            h = _POINT_ROOM_HALF_WIDTH_FT
+            square = [(x - h, y - h), (x + h, y - h), (x + h, y + h), (x - h, y + h)]
+            geometry_rooms.append((str(i), square))
+            indices.append(i)
+
+    if not geometry_rooms:
+        return
+
+    try:
+        computed = zg.analyze_zones(boundary, geometry_rooms, north_offset_deg=facade_bearing_deg)
+    except (ValueError, TypeError):
+        return
+
+    zone_by_key = {r["room"]: r["zone"] for r in computed["rooms"]}
+    for i in indices:
+        zone = zone_by_key.get(str(i))
+        if zone:
+            rooms[i]["zone"] = zone
+            rooms[i]["zone_source"] = "auto"
+
+
 def _run_audit(payload: dict) -> tuple[dict, dict]:
     """Build the {"plot", "rooms"} input the engine expects, audit it, and
     attach constructive placement suggestions (suggestions.py) for any room
@@ -133,11 +215,18 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     keys; see suggestions.suggest_for_layout for their meaning and defaults.
     Rooms without a "polygon" key are unaffected — they still get the usual
     zone/adjacency audit, just no placement suggestion.
+
+    Any room missing an explicit "zone" gets one computed automatically from
+    its "polygon" or "point" plus the plot "boundary", via
+    _auto_assign_zones -- see that function's docstring. A room that already
+    specifies "zone" is never overridden.
     """
     rooms = payload.get("rooms", [])
     facade_bearing_deg = payload.get("facade_bearing_deg", 0.0) or 0.0
     furniture_dimensions = payload.get("furniture_dimensions")
     boundary = payload.get("boundary")
+
+    _auto_assign_zones(rooms, boundary, facade_bearing_deg)
 
     # Persist facade_bearing_deg/furniture_dimensions/boundary alongside
     # plot/rooms so a saved flat round-trips through storage with its
@@ -169,6 +258,15 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     result["suggestions"] = suggestions.suggest_for_layout(
         rooms, facade_bearing_deg=facade_bearing_deg, furniture_dimensions=furniture_dimensions
     )
+    # The definitive {"name", "zone", "zone_source"} actually used for the
+    # audit above, for every room -- not just the ones with a violation
+    # (audit_layout's own "rooms" key only lists rooms that have one). Lets
+    # a caller/UI always show which zone a room ended up in, including ones
+    # _auto_assign_zones computed, even when the room turned out compliant.
+    result["resolved_rooms"] = [
+        {"name": r.get("name"), "zone": r.get("zone"), "zone_source": r.get("zone_source")}
+        for r in rooms
+    ]
 
     # OPT-IN ONLY. Traditional ritual/activation content (ritual_protocol.py)
     # is attached to directional defects only when the caller explicitly sets
