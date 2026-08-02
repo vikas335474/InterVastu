@@ -67,17 +67,15 @@ No repos were found to be private, renamed, or deleted — all five resolved and
 
 ## 4. Recommended Adaptations
 
-None implemented in this session — this was scoped as a **validation and
-analysis pass**, and every candidate below touches either a new external
-dependency (a large dataset, a trained model, a new library) or a new data
-representation (raster masks, PDF text spans) that deserves its own scoped
-task rather than being bundled into a research report. Implementing any of
-these without a separate design/review pass would risk exactly the kind of
-"mess" the task explicitly asked to avoid.
+Item 1 was implemented in a follow-up session (see below); the rest are
+scoped but not built — each touches either a new external dependency (a
+trained model, a new library) or a new data representation (raster masks,
+PDF text spans) that deserves its own design/review pass rather than being
+bundled into a research report or a single follow-up task.
 
 Prioritized, in order of value/risk ratio:
 
-1. **(Recommended next step)** Add a `genesis/engine/tests/test_houseexpo_regression.py`-style optional test module that pulls a small, checked-in sample of HouseExpo plans (a few dozen, not the full 35k) as an additional fixture set for `analyze_zones`/`diagnose_shape`, asserting only structural invariants (no exceptions, centroid always defined, sector always one of `SECTORS`, etc.) — not Vastu correctness, since HouseExpo carries no Vastu ground truth. Small, additive, reversible; does not touch `vastu_audit.py`'s scoring or schema.
+1. **IMPLEMENTED.** `genesis/engine/fixtures/houseexpo_sample/` (40 real HouseExpo boundaries: the upstream 10-house "mini" set + a `seed=42` random draw of 30 more from the full 35,126-house archive, MIT licensed, ~256 KB total, provenance documented in its own `README.md`) plus `genesis/engine/tests/test_houseexpo_regression.py`, which runs `diagnose_shape()` and `analyze_zones()` against every fixture and asserts only structural invariants (no exceptions — including on the 3 sampled boundaries that are self-intersecting per Shapely — every documented field present with the right type/range, and the `hollow_center == not centroid_inside_boundary` cross-field invariant). Deliberately asserts nothing about Vastu correctness, since HouseExpo carries no Vastu ground truth. 81 new tests, all passing; full suite now 209 tests. Does not touch `vastu_audit.py`'s scoring or schema, and is purely additive/test-only.
 2. **(Scope separately)** A design spike for an optional `furniture_detection` input adapter feeding `solver.py`, modeled on planparser's class list, kept behind an explicit opt-in flag the same way `ritual_protocol.py` is — so `solver.py`'s existing narrow, hand-verified placement logic is never silently overridden by a model's output.
 3. **(Scope separately)** A design spike for a PDF-dimension ingestion helper (Floorplan-Dimractor-style), explicitly scoped to text-native PDFs only, with output that a human still confirms before it becomes a `zone_geometry.py` boundary — mirroring the existing `orientation.py` human-confirmation pattern.
 4. **(Watch, do not build yet)** S.T.I.T.C.H-style wall segmentation — track as a future option only if/when a raster-plan ingestion pipeline becomes a real product requirement; would need its own vectorization + human-confirmation layer before touching the geometry core.
