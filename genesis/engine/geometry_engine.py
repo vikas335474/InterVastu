@@ -47,7 +47,7 @@ from __future__ import annotations
 import math
 from typing import Any, Sequence
 
-from shapely.geometry import box
+from shapely.geometry import LineString, box
 
 from ritual_protocol import DIRECTION_DEITIES as _DIRECTION_DEITIES
 from zone_geometry import Coord, _to_polygon, compute_centre
@@ -146,6 +146,25 @@ def pada_grid(
     assigns no classical pada *name* (e.g. specific deity, "Aryaman",
     "Pusha", ...) to any cell — see the module docstring's devata scope
     note.
+
+    PRODUCT CHOICE — the grid is laid over the BOUNDING BOX
+    --------------------------------------------------------
+    The mandala is inscribed on the rotated boundary's axis-aligned bounding
+    box, not on the footprint polygon itself. For a rectangular flat the two
+    are identical. For an irregular one they are not: on the Unit 12 L-shape
+    fixture, 6 of the 81 cells fall entirely outside the built footprint and
+    32 more are partially cut.
+
+    This is a documented PRODUCT CHOICE, not a settled Vastu constant — the
+    same footing as ``zone_geometry``'s threshold constants. Classically the
+    mandala is inscribed on the *plot*, and how to apply it to an irregular
+    or L-shaped footprint is genuinely disputed among practitioners; this
+    module does not invent a resolution to that disagreement, it picks the
+    unambiguous construction and reports enough for a caller to apply their
+    own. ``boundary_occupancy_fraction`` is exactly that lever: it is 0.0 for
+    a cell wholly outside the footprint and fractional for a partially cut
+    one, so a caller who wants footprint-only padas can filter or weight on
+    it without this function having to take a position.
 
     Parameters
     ----------
@@ -373,3 +392,210 @@ def pada_devata_45(
         "references); all other pada names unpopulated pending user verification."
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Entrance pada location — the 32-cell perimeter ring of the 81-pada grid
+# ---------------------------------------------------------------------------
+#
+# WHY THIS EXISTS
+# ---------------
+# `vastu_rule_schema.json` evaluates MainEntrance at 16-ZONE resolution only
+# (preferred N/NE/E, forbidden S). Practising consultants evaluate the main
+# door against the 32 PERIMETER PADAS, because auspiciousness varies pada by
+# pada *within* an otherwise-favourable direction — that per-pada distinction
+# is a substantial part of what a paid residential consultation delivers.
+#
+# The 32 is not a separate construct: a 9x9 grid has 81 padas, of which the
+# border ring is exactly 81 - 7*7 = 32. (Note this is a SQUARE ring, not the
+# "32 equal angular segments radiating from the centroid" that some
+# AI-generated Vastu specs describe — see this module's docstring.)
+#
+# WHAT THIS DOES AND DOES NOT DO
+# ------------------------------
+# Does: locate a door opening on that ring by BOUNDARY INTERSECTION. A door is
+# a segment on the perimeter wall, not an area with a bearing, so taking a
+# door marker's centroid bearing from the plot centre (as the Unit 12 fixture
+# does today for the audit path) answers a subtly different question than the
+# classical one, which is "which perimeter pada does the opening fall in".
+#
+# Does NOT: rate the pada. Auspiciousness per pada varies across texts and
+# regional traditions, and inventing a table would be exactly the fabricated
+# precision this codebase refuses elsewhere. Ratings are INJECTED via
+# `ratings=`, the same pattern `pada_devata_45(overrides=...)` uses, so no
+# code change is needed when a consultant supplies them.
+
+#: Attached to every entrance_pada() result, so no caller can render the
+#: output without the sourcing caveat travelling with it.
+ENTRANCE_PADA_DISCLAIMER: str = (
+    "Pada LOCATION is computed geometrically and is exact for the given "
+    "boundary and opening. Pada AUSPICIOUSNESS is NOT included - per-pada "
+    "ratings vary across classical texts and regional traditions, and this "
+    "module does not guess them. Supply verified ratings via the `ratings` "
+    "parameter; unrated padas report rating=None, needs_verification=True."
+)
+
+
+def _perimeter_ring_cells(order: int) -> list[tuple[int, int]]:
+    """Return the border-ring ``(row, col)`` cells in clockwise compass order.
+
+    Ordering starts at the north-west corner and proceeds clockwise (north
+    edge west-to-east, east edge north-to-south, south edge east-to-west,
+    west edge south-to-north), which is the direction classical perimeter
+    enumerations run. For ``order=9`` this yields exactly 32 cells.
+
+    Note ``row`` increases NORTHWARD (see :func:`pada_grid`), so the north
+    edge is ``row = order - 1``.
+    """
+    top, bottom = order - 1, 0
+    left, right = 0, order - 1
+    north_edge = [(top, c) for c in range(left, right + 1)]
+    east_edge = [(r, right) for r in range(top - 1, bottom - 1, -1)]
+    south_edge = [(bottom, c) for c in range(right - 1, left - 1, -1)]
+    west_edge = [(r, left) for r in range(bottom + 1, top)]
+    return north_edge + east_edge + south_edge + west_edge
+
+
+def _ring_side(row: int, col: int, order: int) -> str:
+    """Compass side of the perimeter ring a cell sits on.
+
+    Corners are named by both edges they belong to (e.g. ``"NE"``), matching
+    how the traditional perimeter enumerations treat corner padas as their
+    own distinct positions rather than as part of one edge.
+    """
+    north, south = row == order - 1, row == 0
+    east, west = col == order - 1, col == 0
+    vertical = "N" if north else ("S" if south else "")
+    horizontal = "E" if east else ("W" if west else "")
+    return vertical + horizontal
+
+
+def entrance_pada(
+    boundary: Sequence[Coord],
+    opening: Sequence[Coord],
+    north_offset_deg: float,
+    ratings: dict[int, Any] | None = None,
+) -> dict[str, Any]:
+    """Locate a door opening on the 32-pada perimeter ring of the plot.
+
+    Both ``boundary`` and ``opening`` are rotated into the true-north frame
+    (:func:`align_to_true_north`) about the boundary's centroid, then the
+    opening is intersected against each perimeter cell of the 9x9 pada grid.
+    Overlap is measured by *length* of the opening falling in each cell, so
+    an opening straddling two padas reports both with their shares rather
+    than being rounded to one.
+
+    Parameters
+    ----------
+    boundary
+        The flat's boundary polygon, ``(x, y)`` in feet — same frame as
+        :func:`pada_grid`.
+    opening
+        The door opening as two or more ``(x, y)`` points describing the
+        segment along the wall. A small rectangle (4+ points, as the Unit 12
+        fixture uses for its entrance marker) is also accepted: its longest
+        axis is taken as the opening line.
+    north_offset_deg
+        True compass bearing of the plan's ``+y``, same convention as
+        :mod:`zone_geometry`.
+    ratings
+        Optional ``{ring_index: rating}`` mapping supplying per-pada
+        auspiciousness from a verified source. Not validated in any way —
+        this function trusts the caller entirely, and invents nothing when
+        the mapping is absent or partial.
+
+    Returns
+    -------
+    dict
+        ``{
+            "ring_size": 32,
+            "primary": {                      # pada with the largest share
+                "ring_index": int,            # 0..31, NW corner origin, clockwise
+                "row": int, "col": int,
+                "side": str,                  # "N", "NE", "E", ...
+                "overlap_fraction": float,    # share of the opening's length
+                "rating": Any | None,
+                "needs_verification": bool,
+            },
+            "padas": [ ... ],                 # every pada the opening touches
+            "straddles_multiple_padas": bool,
+            "disclaimer": str,
+        }``
+
+    Raises
+    ------
+    ValueError
+        If ``opening`` has fewer than 2 distinct points, or does not
+        intersect the plot's perimeter ring at all (i.e. it was given in the
+        wrong coordinate frame, or describes an interior door rather than a
+        perimeter entrance) — both are real input errors and are surfaced
+        rather than coerced into a nearest-pada guess.
+    """
+    order = 9
+    ratings = ratings or {}
+
+    points = [tuple(p) for p in opening]
+    distinct = list(dict.fromkeys(points))
+    if len(distinct) < 2:
+        raise ValueError(
+            f"opening needs at least 2 distinct points, got {opening!r}"
+        )
+
+    centre = compute_centre(boundary)
+    rotated_boundary = align_to_true_north(boundary, north_offset_deg, centre)
+    rotated_opening = align_to_true_north(distinct, north_offset_deg, centre)
+
+    # Reduce the opening to a line. For a marker rectangle (or any polygon),
+    # the longest pairwise axis is the opening's span along the wall.
+    if len(rotated_opening) == 2:
+        line = LineString(rotated_opening)
+    else:
+        best, best_len = None, -1.0
+        for i in range(len(rotated_opening)):
+            for j in range(i + 1, len(rotated_opening)):
+                p, q = rotated_opening[i], rotated_opening[j]
+                length = math.dist(p, q)
+                if length > best_len:
+                    best, best_len = (p, q), length
+        line = LineString(best)
+
+    if line.length <= 0.0:
+        raise ValueError("opening has zero length after deduplication")
+
+    boundary_poly = _to_polygon(rotated_boundary, label="boundary")
+    minx, miny, maxx, maxy = boundary_poly.bounds
+    cell_w = (maxx - minx) / order
+    cell_h = (maxy - miny) / order
+
+    hits: list[dict[str, Any]] = []
+    for ring_index, (row, col) in enumerate(_perimeter_ring_cells(order)):
+        cx0, cy0 = minx + col * cell_w, miny + row * cell_h
+        cell = box(cx0, cy0, cx0 + cell_w, cy0 + cell_h)
+        shared = line.intersection(cell).length
+        if shared <= 0.0:
+            continue
+        hits.append({
+            "ring_index": ring_index,
+            "row": row,
+            "col": col,
+            "side": _ring_side(row, col, order),
+            "overlap_fraction": round(shared / line.length, 6),
+            "rating": ratings.get(ring_index),
+            "needs_verification": ring_index not in ratings,
+        })
+
+    if not hits:
+        raise ValueError(
+            "opening does not intersect the plot's perimeter pada ring; check "
+            "it is in the same coordinate frame as `boundary` and describes a "
+            "perimeter entrance rather than an interior door"
+        )
+
+    hits.sort(key=lambda h: h["overlap_fraction"], reverse=True)
+    return {
+        "ring_size": len(_perimeter_ring_cells(order)),
+        "primary": hits[0],
+        "padas": hits,
+        "straddles_multiple_padas": len(hits) > 1,
+        "disclaimer": ENTRANCE_PADA_DISCLAIMER,
+    }
