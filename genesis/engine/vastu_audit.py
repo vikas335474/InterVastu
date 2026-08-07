@@ -70,6 +70,46 @@ def load_schema(schema_path):
         return json.load(f)
 
 
+# -------------------------------------------------------------------------
+# RULE CONFIDENCE — surfacing the schema's own research signal
+# -------------------------------------------------------------------------
+# The schema annotates every room_constraint with a `confidence` field
+# ("high"/"medium"/"low"/free text) recording how strongly its sources agreed.
+# Before this, no code read that field: a "low"-confidence Garage rule
+# deducted exactly as many points as a "high"-confidence MainEntrance rule,
+# so the output projected more uniform certainty than the source data
+# supports — the one thing this module otherwise works hard to avoid.
+#
+# These helpers surface it. They deliberately do NOT reweight the score
+# arithmetically: SEVERITY_POINTS is already an invented scale (see the
+# module docstring), and multiplying one unvalidated number by another
+# manufactures precision rather than adding information. Instead
+# audit_layout() reports a score BAND, so the uncertainty stays legible.
+
+
+def _rule_confidence(constraints):
+    """Return a rule's schema-stated confidence string, or None if absent.
+
+    Never infers or defaults a value — a rule with no `confidence` field
+    reports None, which is different from (and must not be conflated with)
+    a rule the schema explicitly rates "low".
+    """
+    value = constraints.get("confidence")
+    return value if isinstance(value, str) else None
+
+
+def _is_high_confidence(value):
+    """True only when the schema states a plain, unqualified "high".
+
+    Compound ratings are treated as NOT high. The Toilet rule, for example,
+    reads "high (for forbidden zones) / medium (for single best preferred
+    zone)" — partially-medium is not high. This resolves ambiguity toward a
+    WIDER uncertainty band, which is the safe direction: it can overstate
+    doubt, never certainty.
+    """
+    return isinstance(value, str) and value.strip().lower() == "high"
+
+
 def audit_room(room, schema):
     """
     room: dict with keys:
@@ -115,6 +155,9 @@ def audit_room(room, schema):
             "violation": zone,
             "severity": severity_map.get(zone, "unspecified"),
             "remedy": remedy_map.get(zone, remedy_map.get("default", "No remedy documented in schema for this violation.")),
+            # The schema's own confidence rating for this rule (see
+            # _rule_confidence). Additive; scoring ignores it.
+            "confidence": _rule_confidence(constraints),
         })
 
     # Adjacency / compound-constraint checks (e.g. PoojaRoom + shares_wall_with_toilet,
@@ -128,6 +171,7 @@ def audit_room(room, schema):
                 "violation": flag,
                 "severity": severity_map.get(flag, "unspecified"),
                 "remedy": remedy_map.get(flag, remedy_map.get("default", "No remedy documented in schema for this violation.")),
+                "confidence": _rule_confidence(constraints),
             })
 
     return violations
@@ -515,11 +559,60 @@ def compute_score(scored_violations, base=BASE_SCORE):
     scored_violations: list of violation dicts that have a non-None 'severity'.
     (unknown_room_type warnings are excluded upstream — they carry severity=None
     and are not compliance failures, just missing-rule flags.)
+
+    NOTE — this function SATURATES at 0: past `base`/10 major violations every
+    layout scores identically, so a mildly and a catastrophically non-compliant
+    flat become indistinguishable at the headline number. That behaviour is
+    preserved here deliberately (ui/index.html, storage.py and several tests
+    read this value), and is instead made VISIBLE by the
+    `total_deductions`/`score_saturated` fields audit_layout() reports
+    alongside it. See compute_total_deductions.
     """
     score = base
     for v in scored_violations:
         score -= SEVERITY_POINTS.get(v.get("severity"), SEVERITY_POINTS["unspecified"])
     return max(score, 0)
+
+
+def compute_total_deductions(scored_violations):
+    """Total severity points deducted, UNCAPPED (compute_score clips at 0).
+
+    Reported alongside `compliance_score` so severity beyond the floor is
+    preserved rather than silently clipped — 40 major violations and 10 both
+    score 0, but their deduction totals differ by 300.
+    """
+    return sum(
+        SEVERITY_POINTS.get(v.get("severity"), SEVERITY_POINTS["unspecified"])
+        for v in scored_violations
+    )
+
+
+def compute_score_range(scored_violations, base=BASE_SCORE):
+    """Report the compliance score as a band reflecting rule confidence.
+
+    Returns ``{"low", "high", "is_uncertain"}``:
+
+    * ``low``  — every violation stands. Identical to :func:`compute_score`;
+      the pessimistic bound.
+    * ``high`` — only violations resting on a rule the schema rates plainly
+      "high" confidence are counted; the optimistic bound.
+    * ``is_uncertain`` — True when the two differ, i.e. the result leans on
+      at least one rule the schema itself flags as contested.
+
+    A violation with no `confidence` (plot-level, Brahmasthan, and shape-defect
+    checks — all of which are this module's own interpretation, flagged as
+    pending consultant sign-off) counts toward ``low`` but not ``high``. That
+    is intentional: an unvalidated assumption is not a high-confidence rule,
+    and the band should widen to say so.
+
+    This does not change `compliance_score`. It sits beside it.
+    """
+    low = compute_score(scored_violations, base)
+    high_confidence_only = [
+        v for v in scored_violations if _is_high_confidence(v.get("confidence"))
+    ]
+    high = compute_score(high_confidence_only, base)
+    return {"low": low, "high": high, "is_uncertain": high != low}
 
 
 def audit_layout(
@@ -625,6 +718,14 @@ def audit_layout(
     result["total_scored_violations"] = len(scored_violations)
     result["major_count"] = sum(1 for v in scored_violations if v.get("severity") == "major")
     result["minor_count"] = sum(1 for v in scored_violations if v.get("severity") == "minor")
+
+    # --- Additive honesty fields. None of these change compliance_score; they
+    # --- expose what it hides (saturation, missing denominator, rule
+    # --- confidence). See compute_score_range / compute_total_deductions.
+    result["compliance_score_range"] = compute_score_range(scored_violations)
+    result["total_deductions"] = compute_total_deductions(scored_violations)
+    result["score_saturated"] = result["total_deductions"] > BASE_SCORE
+    result["rooms_evaluated"] = len(input_data.get("rooms", []))
 
     return result
 
@@ -853,6 +954,12 @@ def audit_layout_with_objects(input_data, schema):
         "major_count": sum(1 for v in scored_violations if v.get("severity") == "major"),
         "minor_count": sum(1 for v in scored_violations if v.get("severity") == "minor"),
         "unscored_warnings": unscored_warnings,
+        # Same additive honesty fields audit_layout() reports — kept in sync
+        # here so the two entry points never disagree about the same layout.
+        "compliance_score_range": compute_score_range(scored_violations),
+        "total_deductions": compute_total_deductions(scored_violations),
+        "score_saturated": compute_total_deductions(scored_violations) > BASE_SCORE,
+        "rooms_evaluated": len(input_data.get("rooms", [])),
     }
 
 

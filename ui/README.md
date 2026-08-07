@@ -33,6 +33,42 @@ starting the server, or the session cookie won't be stored by the browser:
 VASTU_UI_INSECURE_COOKIES=1 uvicorn ui.server:app --reload
 ```
 
+## Deploying (Render, free tier)
+
+`render.yaml` at the repo root is a Render Blueprint for this app: pip
+install, then `uvicorn ui.server:app --host 0.0.0.0 --port $PORT`, health
+check on `/`. To deploy:
+
+1. Push this repo to GitHub (already done if you're reading this on a
+   branch/PR).
+2. In the Render dashboard: **New > Blueprint**, point it at this repo.
+   Render reads `render.yaml` and provisions the service on the free plan
+   automatically.
+3. Once live, open the assigned `https://<service>.onrender.com` URL —
+   cookies are already marked `Secure`, which works out of the box since
+   Render serves over HTTPS (no `VASTU_UI_INSECURE_COOKIES` needed).
+
+**Read before relying on this for anything but trying the app out:**
+Render's **free** web-service plan has no persistent disk — the SQLite
+file (`ui/vastu_ui.db`) lives on the container's local, ephemeral
+filesystem. It survives while the instance stays up, but is wiped on every
+redeploy, and free instances also spin down after ~15 minutes idle and
+spin back up on the next request — data does not reliably survive that
+cycle either. In practice: registered accounts and saved flats can
+disappear without warning. That's an acceptable tradeoff for kicking the
+tyres on a free tier, but not for anything you need to keep. Two ways
+around it if that matters:
+
+- Upgrade to a Render plan with a persistent disk, mount it, and point
+  `VASTU_UI_DB_PATH` at a file inside it.
+- Swap SQLite for a hosted database (Render's own free Postgres, or
+  similar) — `storage.py` is the only place that would need to change; the
+  rest of the app talks to it through plain function calls, not raw SQL
+  scattered around.
+
+Neither is done here — this Blueprint deploys the app as-is, ephemeral
+storage and all.
+
 ## Notes
 
 - This UI adds no audit logic of its own — `/audit` calls the engine's

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    # Gating job: covers the deterministic engine, whose entire value
+    # proposition is that its output does not drift.
+    name: Python engine + UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest genesis/engine ui -q
+
+  node:
+    name: Node scene + render_adapter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # render_adapter has zero runtime dependencies, so it is cheap and is
+      # kept as its own step to fail fast before the heavier scene setup.
+      - name: render_adapter tests
+        working-directory: render_adapter
+        run: |
+          npm ci
+          npm test
+
+      # scene renders through headless Chromium (real WebGL), so the browser
+      # has to be installed explicitly — npm ci alone is not enough.
+      - name: scene tests
+        working-directory: scene
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test

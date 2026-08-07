@@ -24,6 +24,7 @@ import json
 import sys
 from pathlib import Path
 
+import geometry_engine as ge
 import zone_geometry as zg
 from vastu_audit import audit_layout, load_schema
 
@@ -130,6 +131,58 @@ def print_shape_report(shape_diagnosis):
     print()
 
 
+def print_pada_grid_report(pada_grid_result):
+    """Summarise geometry_engine.pada_grid()'s per-cell output.
+
+    Purely a geometric occupancy summary (which pada cells the footprint
+    and each room fall in) — no deity/interpretation content. See
+    geometry_engine.py's module docstring for why that mapping is
+    deliberately not implemented here.
+    """
+    print("=" * 78)
+    print(f"PADA GRID  (geometry_engine.pada_grid, order={pada_grid_result['order']}"
+          f"x{pada_grid_result['order']})")
+    print("=" * 78)
+    occupied = [c for c in pada_grid_result["cells"] if c["boundary_occupancy_fraction"] > 0.0]
+    full = [c for c in occupied if c["boundary_occupancy_fraction"] >= 0.999]
+    partial = [c for c in occupied if c["boundary_occupancy_fraction"] < 0.999]
+    print(f"cells: {len(pada_grid_result['cells'])} total, "
+          f"{len(full)} fully inside footprint, {len(partial)} partially cut")
+    for cell in occupied:
+        if not cell["room_occupancy"]:
+            continue
+        rooms_str = ", ".join(
+            f"{name}={frac:.0%}" for name, frac in cell["room_occupancy"].items()
+        )
+        print(f"  pada[row={cell['row']:>2}, col={cell['col']:>2}]: {rooms_str}")
+    print()
+
+
+def print_devata_45_report(devata_result):
+    """Summarise geometry_engine.pada_devata_45()'s per-cell output.
+
+    EXPERIMENTAL, opt-in second method - see geometry_engine.py's
+    UNVERIFIED block for exactly which names are sourced vs. unpopulated.
+    Printed as its own clearly-labelled section, separate from the
+    pada_grid() report above, so the two never get confused for each other.
+    """
+    print("=" * 78)
+    print("45-DEVATA OVERLAY  (geometry_engine.pada_devata_45) -- EXPERIMENTAL")
+    print("=" * 78)
+    print(devata_result["disclaimer"])
+    print()
+    named = [c for c in devata_result["cells"] if c["devata"] is not None]
+    unverified = [c for c in devata_result["cells"] if c["needs_verification"]]
+    print(f"named cells: {len(named)} of {len(devata_result['cells'])} "
+          f"({len(unverified)} still need_verification)")
+    for cell in named:
+        rooms_str = ", ".join(
+            f"{name}={frac:.0%}" for name, frac in cell["room_occupancy"].items()
+        ) or "(no room in this pada)"
+        print(f"  pada[row={cell['row']:>2}, col={cell['col']:>2}] {cell['devata']:<45} {rooms_str}")
+    print()
+
+
 def print_audit_report(audit_result):
     print("=" * 78)
     print("AUDIT  (vastu_audit.audit_layout)")
@@ -177,6 +230,20 @@ def main():
         fixture["boundary"], north_offset_deg=fixture["north_offset_deg"]
     )
     print_shape_report(shape_diagnosis)
+
+    pada_grid_result = ge.pada_grid(
+        fixture["boundary"],
+        rooms=[(r["name"], r["polygon"]) for r in fixture["rooms"]],
+        north_offset_deg=fixture["north_offset_deg"],
+    )
+    print_pada_grid_report(pada_grid_result)
+
+    devata_result = ge.pada_devata_45(
+        fixture["boundary"],
+        rooms=[(r["name"], r["polygon"]) for r in fixture["rooms"]],
+        north_offset_deg=fixture["north_offset_deg"],
+    )
+    print_devata_45_report(devata_result)
 
     schema = load_schema(SCHEMA_PATH)
     audit_input = build_audit_input(geometry_result)

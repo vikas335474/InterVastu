@@ -82,6 +82,101 @@ same licensed-consultant sign-off as the rest of the schema. Run the end-to-end
 demo (`python3 genesis/engine/run_geometry.py`) to see it on the Unit 12
 L-shaped fixture, where it reports a cut NE zone as a scored major defect.
 
+## `genesis/engine/geometry_engine.py` — rotation primitive + classical pada-grid overlay
+
+Two additions on top of `zone_geometry.py`, both deterministic geometry only:
+
+* **Rotation.** `rotate_point` / `rotate_polygon` are a general-purpose 2D
+  affine rotation about an arbitrary origin. `zone_geometry.py` already
+  corrects for `north_offset_deg`, but by rotating the *bearing
+  measurement*, not the vertices — enough for "which sector is this room
+  in", but not for overlaying an axis-aligned grid, which needs the
+  geometry itself rotated into a true-north frame first. `align_to_true_north`
+  is that compass-aware wrapper; the sign convention (compass
+  "clockwise-from-north" vs. standard math "counter-clockwise-from-+x") is
+  easy to get backwards, so it's asserted directly against
+  `zone_geometry.bearing_deg` in the test suite rather than only derived by
+  hand — see `tests/test_geometry_engine.py`.
+* **`pada_grid()`** overlays a classical **square** Vastu Purusha Mandala
+  grid (default 9x9 = 81 pada, the "Paramasayika" mandala most commonly
+  cited for residential plots; `MANDUKA_ORDER` = 8x8/64 pada is the other
+  commonly cited alternative) on the true-north-aligned flat, and reports
+  exact-intersection occupancy fractions per cell for the footprint and
+  each room. It deliberately does **not** implement a "32 equal angular
+  segments radiating from the centroid" construct some AI-generated Vastu
+  specs describe as "32-Pada" — the classical padas are a square grid
+  subdivision, not a radial slicing, and `zone_geometry.py`'s existing
+  16-sector scheme already owns angular zone logic. The grid is laid over the
+  rotated boundary's **bounding box**, which is exact for a rectangular flat
+  but not for an irregular one (on the Unit 12 L-shape, 6 of 81 cells fall
+  entirely outside the footprint and 32 more are partially cut). That is a
+  documented **product choice**, not a settled Vastu constant — classically
+  the mandala is inscribed on the plot, and its application to irregular
+  footprints is genuinely disputed among practitioners, so the module picks
+  the unambiguous construction and exposes `boundary_occupancy_fraction` (0.0
+  for a cell wholly outside the footprint) as the lever for callers who want
+  to filter or weight on it. `pada_grid()` also
+  assigns **no deity/interpretation** to any cell — per-pada devata mapping
+  was already explicitly scoped out of this codebase pending dedicated
+  consultant sourcing (see `ritual_protocol.py`'s module docstring), and
+  this module doesn't revisit that call; its output shape just leaves room
+  for a future consultant-sourced map to be attached per cell later. Run
+  `python3 genesis/engine/run_geometry.py` to see a pada-occupancy summary
+  on the Unit 12 fixture, printed after the existing geometry/shape reports.
+
+### `pada_devata_45()` — EXPERIMENTAL 45-devata overlay (second, opt-in method)
+
+A second method, coexisting with `pada_grid()` rather than replacing it —
+calling it never changes `pada_grid()`'s own output. It reuses the exact
+same 9x9 grid and attaches a `"devata"` name to each cell for the classical
+"45-devata" scheme (32 peripheral + 13 core padas of the 81-pada grid).
+
+**Only 9 of the 81 cells are named**: the 4 corner + 4 side-midpoint border
+anchors and the inner 3x3 Brahmasthan, reusing this project's existing
+`ritual_protocol.DIRECTION_DEITIES` names. The other 72 cells are returned
+as `devata=None, needs_verification=True` rather than a guessed name —
+published Vastu texts disagree on the exact 32-border-name roster and the
+13-way interior grouping, and this module does not invent a resolution to
+that disagreement. An `overrides={(row, col): name}` parameter lets a
+caller fill in the rest after checking them against a primary source or a
+consultant; overrides are trusted as-is and can also correct a built-in
+anchor name. Every result carries a `disclaimer` field spelling this out —
+see `geometry_engine.py`'s "UNVERIFIED — READ BEFORE USING" block for the
+full reasoning. Run `python3 genesis/engine/run_geometry.py` to see it on
+the Unit 12 fixture, printed as its own clearly-labelled section.
+
+### `entrance_pada()` — locating a door on the 32-pada perimeter ring
+
+`vastu_rule_schema.json` evaluates `MainEntrance` at 16-zone resolution only
+(preferred N/NE/E, forbidden S). Practising consultants evaluate the main
+door against the **32 perimeter padas**, since auspiciousness varies pada by
+pada *within* an otherwise-favourable direction. The 32 is not a separate
+construct: a 9x9 grid has 81 padas, of which the border ring is exactly
+81 − 7×7 = 32 — the same ring `pada_grid()` already computes.
+
+`entrance_pada()` locates a door opening on that ring by **boundary
+intersection**, not centroid bearing. A door is a segment on a perimeter
+wall, so the classical question is which pada the opening falls in — a
+different question from "what bearing is this door marker's centroid from
+the plot centre", which is what the audit path answers today. Openings that
+straddle two padas report both with their length shares rather than being
+rounded to one.
+
+The difference is not academic. On the Unit 12 fixture, the existing 16-zone
+path assigns the entrance `ESE` at **`low` confidence, 0.58° from a sector
+edge** — a small tracing error flips the zone. `entrance_pada()` puts the
+same door unambiguously at ring index 15 (East side) with 100% overlap and no
+straddle.
+
+**Ratings are not included and are not guessed.** Per-pada auspiciousness
+varies across classical texts and regional traditions; supplying a table from
+general knowledge is precisely the fabricated precision this project refuses
+elsewhere. Ratings are injected via `ratings={ring_index: rating}` — the same
+pattern as `pada_devata_45(overrides=…)` — and unrated padas report
+`rating=None, needs_verification=True`. Every result carries
+`ENTRANCE_PADA_DISCLAIMER`. When a consultant supplies ratings, no code
+changes.
+
 ## `genesis/engine/ritual_protocol.py` — OPTIONAL ritual/activation content
 
 An **opt-in, fully decoupled** layer that pairs a directional physical remedy
