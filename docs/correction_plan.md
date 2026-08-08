@@ -24,7 +24,8 @@ and nine tests read it directly.
 | 3 | A2 — score saturates, no denominator | **Executed** | — |
 | 4 | A3 — pada grid bbox choice undocumented | **Executed** | — |
 | 5 | D1 — entrance pada (geometry half) | **Executed** | ratings need consultant |
-| 6 | C1/C2/C3 — sign-off, legal, positioning | Not started | human decisions |
+| 6a | C3 — positioning ("full" vs "directional") | **Resolved** | — |
+| 6b | C1/C2 — consultant sign-off, legal review | Not started | human decisions |
 | 7 | D2 — Ayadi Shadvarga | Scoped only | cited constants |
 | 8 | D3 — marma sthana | Scoped only | structural-element input model |
 | 9 | B2/B3 — packaging, cross-language contract | Deferred | — |
@@ -141,13 +142,40 @@ channel, so no code change is needed when they arrive.
 
 ---
 
-## Phases 6–9 — not executed, and why
+## Phase 6a — C3 positioning: resolved by not making the claim
 
-**6. C1 / C2 / C3 — consultant sign-off, legal review, positioning.** Not
-engineering work. C3 (does the product claim "full Vastu compliance" or
-"directional Vastu audit"?) is one decision that determines whether phases 7–8
-are mandatory or optional, and it costs nothing but an answer. It remains the
-highest-value open item in the project.
+`known_gaps[2]` asked whether the product markets "full Vastu compliance" or
+"directional Vastu audit". Answering either way would have been a claim made on
+the user's behalf — and "full Vastu" has no fixed technical meaning that
+different traditions would fill the same way.
+
+**Resolution:** the user selects the depth, and neither option is sold as
+complete. `genesis/engine/audit_modes.py` defines two modes (`directional`,
+`full_mandala`) and attaches :data:`UNIVERSAL_EXCLUSIONS` to **every** manifest,
+including the deepest one. The UI renders that list on the input form *and* at
+the foot of every report.
+
+Three properties keep this honest, each asserted by tests rather than by
+convention:
+
+- **No mode can claim completeness.** Every mode carries the same six
+  exclusions (Ayadi, marma sthana, vithi shula, multi-storey, per-pada
+  auspiciousness, consultant sign-off). Adding a mode without them fails
+  `test_every_mode_carries_the_universal_exclusions`.
+- **Depth is additive.** The extended mode never alters the audit beneath it —
+  `test_selected_mode_never_changes_the_directional_findings` asserts score,
+  counts, rooms and plot-level findings are byte-identical across modes.
+- **Bad input degrades, never 500s.** `audit_mode` arrives from a JSON body, so
+  unhashable values (`{}`, `[]`) fall back to `directional`. A test caught this
+  as a real `TypeError` before it shipped.
+
+The deeper mode buys higher-resolution *measurement*, not interpretation: pada
+locations are exact, pada meanings are absent because they are unsourced.
+
+**Still open: C1 and C2.** Consultant sign-off and legal review of remedy
+language are human decisions with long lead times, unchanged by this phase.
+C3 being settled means phases 7–8 are now clearly *optional* rather than
+mandatory — the product no longer needs them to be truthful about its scope.
 
 **7. D2 — Ayadi Shadvarga.** The best remaining fit for this engine: pure
 deterministic arithmetic on dimensions it already holds. Blocked on sourced,

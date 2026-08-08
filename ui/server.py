@@ -41,6 +41,7 @@ import ritual_protocol  # noqa: E402
 import storage  # noqa: E402
 import suggestions  # noqa: E402
 import auth  # noqa: E402
+import audit_modes  # noqa: E402
 
 SCHEMA_PATH = ENGINE_DIR / "vastu_rule_schema.json"
 SCHEMA = load_schema(SCHEMA_PATH)
@@ -139,15 +140,24 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     furniture_dimensions = payload.get("furniture_dimensions")
     boundary = payload.get("boundary")
 
-    # Persist facade_bearing_deg/furniture_dimensions/boundary alongside
-    # plot/rooms so a saved flat round-trips through storage with its
-    # suggestion + shape-diagnosis inputs intact, not just its audit inputs.
+    # Audit depth is the USER's call, not the product's — see
+    # audit_modes.py's docstring for why this resolves the schema's own
+    # known_gaps[2] question rather than answering it on their behalf. An
+    # unrecognised mode degrades to "directional" rather than erroring, and
+    # the resolved value is echoed back so the caller can see that happened.
+    audit_mode = audit_modes.resolve_mode(payload.get("audit_mode"))
+
+    # Persist facade_bearing_deg/furniture_dimensions/boundary/audit_mode
+    # alongside plot/rooms so a saved flat round-trips through storage with
+    # its suggestion + shape-diagnosis inputs intact, not just its audit
+    # inputs.
     input_data = {
         "plot": payload.get("plot", {}),
         "rooms": rooms,
         "facade_bearing_deg": facade_bearing_deg,
         "furniture_dimensions": furniture_dimensions,
         "boundary": boundary,
+        "audit_mode": audit_mode,
     }
 
     # Footprint-level shape diagnosis (hollow-centre + missing-zone) only runs
@@ -169,6 +179,22 @@ def _run_audit(payload: dict) -> tuple[dict, dict]:
     result["suggestions"] = suggestions.suggest_for_layout(
         rooms, facade_bearing_deg=facade_bearing_deg, furniture_dimensions=furniture_dimensions
     )
+
+    # Every result states the depth it was run at and, crucially, what that
+    # depth did NOT examine — the manifest's "excluded" list is attached to
+    # every mode including the deepest, so no response can read as a claim of
+    # complete Vastu compliance. See audit_modes.UNIVERSAL_EXCLUSIONS.
+    result["audit_mode"] = audit_mode
+    result["coverage"] = audit_modes.coverage_manifest(audit_mode)
+
+    # The extended mode's geometry is additive: the directional audit above is
+    # byte-identical either way, and every sub-layer here is fault-isolated
+    # (see run_mandala_layer), so a bad room polygon degrades one panel rather
+    # than the whole report.
+    if audit_mode == "full_mandala":
+        result["mandala"] = audit_modes.run_mandala_layer(
+            boundary, rooms, facade_bearing_deg
+        )
 
     # OPT-IN ONLY. Traditional ritual/activation content (ritual_protocol.py)
     # is attached to directional defects only when the caller explicitly sets
@@ -226,6 +252,13 @@ def schema_info():
             "forbidden": SCHEMA.get("plot_level_rules", {}).get("shape", {}).get("forbidden", []),
         },
         "schema_meta": SCHEMA.get("_meta", {}),
+        # Audit depths the user can choose between, each with its own coverage
+        # manifest. Served from the engine rather than hardcoded in the page,
+        # so the UI can never drift from what the engine actually computes.
+        "audit_modes": [
+            audit_modes.coverage_manifest(key) for key in audit_modes.MODES
+        ],
+        "default_audit_mode": audit_modes.DEFAULT_MODE,
     }
 
 

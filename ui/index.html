@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InterVastu — Audit Engine</title>
+<!-- Inline data-URI favicon: a 3x3 mandala mark. Avoids the /favicon.ico
+     404 every page load without adding a static-file route or an asset. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%233454d1'/%3E%3Cg stroke='%23fff' stroke-width='1.6' fill='none'%3E%3Crect x='7' y='7' width='18' height='18'/%3E%3Cpath d='M13 7v18M19 7v18M7 13h18M7 19h18'/%3E%3C/g%3E%3Crect x='13' y='13' width='6' height='6' fill='%23fff'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f5f6f8;
@@ -200,9 +203,67 @@
 
   .hidden { display: none !important; }
 
+  /* --- Audit depth selector -------------------------------------------- */
+  .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.85rem; }
+  .mode-option {
+    position: relative; border: 1.5px solid var(--border); border-radius: var(--radius);
+    padding: 0.9rem 1rem; cursor: pointer; background: var(--surface);
+    transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+  }
+  .mode-option:hover { border-color: #c3c9d4; background: #fcfcfd; }
+  .mode-option.selected { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 3px rgba(52,84,209,0.08); }
+  .mode-option input { position: absolute; opacity: 0; pointer-events: none; }
+  .mode-option .mode-name { font-weight: 650; display: flex; align-items: center; gap: 0.45rem; }
+  .mode-option .mode-tag { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; }
+  .mode-badge {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--good-soft); color: var(--good);
+  }
+  .mode-badge.extended { background: #ede9fb; color: var(--ritual); }
+  .mode-includes { margin: 0.6rem 0 0; padding-left: 1.05rem; font-size: 0.84rem; color: var(--text-muted); }
+  .mode-includes li { margin-bottom: 0.15rem; }
+
+  .coverage-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem 1rem; margin-top: 1rem; background: #fbfbfc; }
+  .coverage-panel summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+  .coverage-excl { margin: 0.7rem 0 0; padding: 0; list-style: none; }
+  .coverage-excl li { padding: 0.5rem 0; border-top: 1px solid var(--border); font-size: 0.86rem; }
+  .coverage-excl .layer { font-weight: 600; }
+  .coverage-excl .status {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+    background: var(--minor-soft); color: var(--minor); padding: 0.08rem 0.38rem;
+    border-radius: 4px; margin-left: 0.4rem; font-weight: 700;
+  }
+  .coverage-excl .why { color: var(--text-muted); display: block; margin-top: 0.15rem; }
+
+  /* --- Plan viewer ------------------------------------------------------ */
+  .plan-viewer { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; margin: 1rem 0; }
+  .plan-toolbar {
+    display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: center;
+    padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--border); background: #fbfbfc;
+  }
+  .plan-toolbar label { display: flex; align-items: center; gap: 0.32rem; font-size: 0.84rem; cursor: pointer; user-select: none; }
+  .plan-svg { display: block; width: 100%; height: auto; background: #fdfdfe; }
+  .plan-svg text { font-family: inherit; }
+  .plan-caption { padding: 0.55rem 0.85rem; font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid var(--border); }
+
+  /* --- Mandala results -------------------------------------------------- */
+  .pada-legend { display: flex; flex-wrap: wrap; gap: 0.8rem; font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0 0; }
+  .pada-legend span::before {
+    content: ''; display: inline-block; width: 0.7rem; height: 0.7rem;
+    border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; background: currentColor;
+  }
+  .entrance-callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--ritual);
+    background: var(--ritual-soft); border-radius: 8px; padding: 0.75rem 0.9rem; margin: 0.75rem 0;
+  }
+  .entrance-callout .big { font-size: 1.5rem; font-weight: 700; line-height: 1.15; }
+  .score-band { font-size: 0.85rem; color: var(--text-muted); margin: -0.4rem 0 0.6rem; }
+  .score-band .band { font-weight: 650; color: var(--text); }
+
   @media (max-width: 560px) {
     .field-row { flex-direction: column; gap: 0.7rem; }
     .topbar { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+    .mode-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -371,6 +432,17 @@
       </div>
 
       <div id="trace-legend" class="trace-legend"></div>
+    </div>
+
+    <div class="card">
+      <h2>Analysis depth</h2>
+      <p class="muted" style="margin-top:-0.3rem;">
+        Choose how deep the audit goes. This is your call, not ours — and each
+        option states exactly what it does and does not examine, so neither is
+        presented as a complete Vastu certificate.
+      </p>
+      <div class="mode-grid" id="mode-grid"></div>
+      <div id="mode-coverage"></div>
     </div>
 
     <div class="card">
@@ -569,6 +641,7 @@ async function loadSchemaInfo() {
   const shapes = [...schemaInfo.plot_shapes.preferred, ...schemaInfo.plot_shapes.forbidden];
   shapeSelect.innerHTML = shapes.map(s => `<option value="${s}">${s}</option>`).join('');
   populateTraceRoomTypes();
+  renderModeSelector();
 
   document.getElementById('brahmasthan-obstructed').addEventListener('change', (e) => {
     document.getElementById('obstruction-type-wrap').classList.toggle('hidden', !e.target.checked);
@@ -576,6 +649,67 @@ async function loadSchemaInfo() {
 
   document.getElementById('add-room-btn').addEventListener('click', addRoomRow);
   addRoomRow();
+}
+
+/* ===================== Audit depth selector =====================
+ * Modes and their coverage manifests come from /schema-info, which serves
+ * them straight from audit_modes.py — the page never hardcodes what a mode
+ * covers, so the UI cannot drift from what the engine actually computes.
+ */
+let selectedMode = null;
+
+function renderModeSelector() {
+  const modes = schemaInfo.audit_modes || [];
+  if (!modes.length) return;
+  selectedMode = schemaInfo.default_audit_mode || modes[0].mode;
+
+  const grid = document.getElementById('mode-grid');
+  grid.innerHTML = modes.map(m => `
+    <label class="mode-option${m.mode === selectedMode ? ' selected' : ''}" data-mode="${m.mode}">
+      <input type="radio" name="audit-mode" value="${m.mode}" ${m.mode === selectedMode ? 'checked' : ''}>
+      <div class="mode-name">
+        ${escapeHtml(m.label)}
+        <span class="mode-badge${m.adds_over ? ' extended' : ''}">${m.adds_over ? 'Extended' : 'Baseline'}</span>
+      </div>
+      <div class="mode-tag">${escapeHtml(m.tagline)}</div>
+      <ul class="mode-includes">${m.included.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+    </label>
+  `).join('');
+
+  grid.querySelectorAll('input[name="audit-mode"]').forEach(input => {
+    input.addEventListener('change', () => {
+      selectedMode = input.value;
+      grid.querySelectorAll('.mode-option').forEach(o => {
+        o.classList.toggle('selected', o.dataset.mode === selectedMode);
+      });
+      renderModeCoverage();
+    });
+  });
+  renderModeCoverage();
+}
+
+function renderModeCoverage() {
+  const m = (schemaInfo.audit_modes || []).find(x => x.mode === selectedMode);
+  if (!m) return;
+  document.getElementById('mode-coverage').innerHTML = `
+    <details class="coverage-panel">
+      <summary>What "${escapeHtml(m.label)}" does not cover (${m.excluded.length} items)</summary>
+      <p class="muted" style="margin:0.6rem 0 0;">${escapeHtml(m.description)}</p>
+      <ul class="coverage-excl">
+        ${m.excluded.map(e => `
+          <li>
+            <span class="layer">${escapeHtml(e.layer)}</span><span class="status">${escapeHtml(e.status)}</span>
+            <span class="why">${escapeHtml(e.why)}</span>
+          </li>`).join('')}
+      </ul>
+      <p class="muted" style="margin:0.7rem 0 0;"><strong>${escapeHtml(m.claim_note)}</strong></p>
+    </details>`;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
 
 function addRoomRow() {
@@ -688,9 +822,16 @@ function assembleLayout() {
   }
 
   const include_ritual_protocol = document.getElementById('include-ritual').checked;
+  const audit_mode = selectedMode || (schemaInfo.default_audit_mode || 'directional');
 
-  return { plot, rooms, facade_bearing_deg, furniture_dimensions, boundary, include_ritual_protocol, polygonErrors };
+  return { plot, rooms, facade_bearing_deg, furniture_dimensions, boundary, include_ritual_protocol, audit_mode, polygonErrors };
 }
+
+/* The layout the currently-displayed result was produced from. The plan
+ * viewer draws from this rather than re-reading the form, so the drawing
+ * always matches what was actually audited even if the user has since
+ * edited a field. */
+let lastAuditedLayout = null;
 
 function layoutPayload() {
   const { polygonErrors, ...layout } = assembleLayout();
@@ -698,6 +839,7 @@ function layoutPayload() {
     setSaveStatus(`Fix polygon JSON before continuing: ${polygonErrors.join('; ')}`, true);
     return null;
   }
+  lastAuditedLayout = layout;
   return layout;
 }
 
@@ -752,6 +894,261 @@ function renderShapeDiagnosisPanel(diag) {
     </div>`;
 }
 
+/* ===================== Plan viewer =====================
+ * Draws the flat as an SVG, rendered in the TRUE-NORTH frame: boundary,
+ * rooms and (in extended mode) the pada grid are all rotated by
+ * -facade_bearing about the centroid before drawing, exactly as
+ * geometry_engine.align_to_true_north does server-side. Two reasons:
+ * north is then always straight up on screen (the convention any Vastu
+ * plan is read in), and the pada grid — which the engine computes in that
+ * same rotated frame — overlays the rooms without a second transform.
+ *
+ * SVG's y axis points down while plan coordinates point up, so y is
+ * negated at projection time; that flip is the only coordinate trick here.
+ */
+function rotatePt(p, angleDeg, origin) {
+  const t = angleDeg * Math.PI / 180;
+  const dx = p[0] - origin[0], dy = p[1] - origin[1];
+  return [
+    origin[0] + dx * Math.cos(t) - dy * Math.sin(t),
+    origin[1] + dx * Math.sin(t) + dy * Math.cos(t),
+  ];
+}
+
+function polygonCentroid(pts) {
+  // Area centroid (shoelace), matching zone_geometry.compute_centre —
+  // NOT the average of vertices, which would drift on uneven vertex spacing.
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+    const cross = x0 * y1 - x1 * y0;
+    a += cross; cx += (x0 + x1) * cross; cy += (y0 + y1) * cross;
+  }
+  a *= 0.5;
+  if (Math.abs(a) < 1e-9) return pts[0] || [0, 0];
+  return [cx / (6 * a), cy / (6 * a)];
+}
+
+function renderPlanViewer(result, layout) {
+  const boundary = layout.boundary;
+  if (!boundary || boundary.length < 3) return '';
+
+  const north = layout.facade_bearing_deg || 0;
+  const centre = polygonCentroid(boundary);
+  const toNorth = pts => pts.map(p => rotatePt(p, -north, centre));
+
+  const rb = toNorth(boundary);
+  const rooms = (layout.rooms || [])
+    .filter(r => r.polygon && r.polygon.length >= 3)
+    .map(r => ({ name: r.name, pts: toNorth(r.polygon) }));
+
+  // Fit: pad by 6% of the larger span so labels near an edge aren't clipped.
+  const all = [...rb, ...rooms.flatMap(r => r.pts)];
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const pad = Math.max(maxX - minX, maxY - minY) * 0.06 || 1;
+  const vb = { x: minX - pad, y: -(maxY + pad), w: (maxX - minX) + 2 * pad, h: (maxY - minY) + 2 * pad };
+  const P = pts => pts.map(p => `${p[0]},${-p[1]}`).join(' ');
+  const unit = Math.max(vb.w, vb.h);
+  const stroke = unit / 320;
+  const fontSize = unit / 42;
+
+  // Rooms carrying a scored violation are tinted, so the plan itself shows
+  // where the findings are rather than making the reader cross-reference
+  // the list below it.
+  const flagged = {};
+  (result.rooms || []).forEach(r => {
+    const worst = r.violations.some(v => v.severity === 'major') ? 'major'
+      : r.violations.some(v => v.severity === 'minor') ? 'minor' : null;
+    if (worst) flagged[r.room] = worst;
+  });
+
+  let layers = '';
+
+  // --- Pada grid (extended mode only) ---
+  const grid = result.mandala && result.mandala.pada_grid;
+  if (grid) {
+    const ring = new Set();
+    (result.mandala.entrance ? result.mandala.entrance.padas : []).forEach(p => ring.add(`${p.row},${p.col}`));
+    layers += `<g id="layer-pada" class="plan-layer">`;
+    grid.cells.forEach(c => {
+      const b = c.bounds;
+      const inFootprint = c.boundary_occupancy_fraction > 0;
+      const isEntrance = ring.has(`${c.row},${c.col}`);
+      const fill = isEntrance ? 'rgba(106,76,147,0.30)'
+        : inFootprint ? 'rgba(52,84,209,0.05)' : 'rgba(0,0,0,0.035)';
+      layers += `<rect x="${b.min_x}" y="${-b.max_y}" width="${b.max_x - b.min_x}" height="${b.max_y - b.min_y}"
+        fill="${fill}" stroke="rgba(52,84,209,0.35)" stroke-width="${stroke * 0.6}"/>`;
+    });
+    layers += `</g>`;
+  }
+
+  // --- Boundary ---
+  layers += `<g id="layer-boundary" class="plan-layer">
+    <polygon points="${P(rb)}" fill="rgba(28,34,48,0.03)" stroke="#1c2230" stroke-width="${stroke * 2}" stroke-linejoin="round"/>
+  </g>`;
+
+  // --- Rooms ---
+  // Labels are sized to fit their own room and clamped inside the viewBox, so
+  // a narrow room or a small entrance marker doesn't spill its name across a
+  // neighbour or off the canvas. A room too small to hold legible text gets a
+  // dot instead of a label rather than an unreadable one.
+  layers += `<g id="layer-rooms" class="plan-layer">`;
+  rooms.forEach(r => {
+    const sev = flagged[r.name];
+    const fill = sev === 'major' ? 'rgba(192,57,43,0.16)' : sev === 'minor' ? 'rgba(183,121,31,0.16)' : 'rgba(30,126,66,0.10)';
+    const line = sev === 'major' ? '#c0392b' : sev === 'minor' ? '#b7791f' : '#1e7e42';
+    const c = polygonCentroid(r.pts);
+    layers += `<polygon points="${P(r.pts)}" fill="${fill}" stroke="${line}" stroke-width="${stroke}"/>`;
+
+    const rxs = r.pts.map(p => p[0]), rys = r.pts.map(p => p[1]);
+    const rw = Math.max(...rxs) - Math.min(...rxs);
+    const rh = Math.max(...rys) - Math.min(...rys);
+    // 0.55em is a serviceable average glyph width for this font stack.
+    const fitted = Math.min(fontSize, (rw * 0.92) / (r.name.length * 0.55), rh * 0.8);
+
+    if (fitted < fontSize * 0.42) {
+      layers += `<circle cx="${c[0]}" cy="${-c[1]}" r="${stroke * 2}" fill="${line}"/>`;
+      return;
+    }
+    const half = (r.name.length * 0.55 * fitted) / 2;
+    const lx = Math.min(Math.max(c[0], vb.x + half + pad * 0.2), vb.x + vb.w - half - pad * 0.2);
+    layers += `<text x="${lx}" y="${-c[1]}" font-size="${fitted}" fill="#1c2230" text-anchor="middle"
+        dominant-baseline="middle" style="paint-order:stroke; stroke:#fff; stroke-width:${stroke * 2.4};"
+        >${escapeHtml(r.name)}</text>`;
+  });
+  layers += `</g>`;
+
+  // --- Brahmasthan: true centroid vs bounding-box centre ---
+  const diag = result.shape_diagnosis;
+  if (diag) {
+    const tc = rotatePt([diag.centroid.x, diag.centroid.y], -north, centre);
+    const bc = rotatePt([diag.bbox_center.x, diag.bbox_center.y], -north, centre);
+    const r1 = unit / 55;
+    layers += `<g id="layer-centre" class="plan-layer">
+      <circle cx="${bc[0]}" cy="${-bc[1]}" r="${r1 * 0.62}" fill="none" stroke="#6b7280"
+        stroke-width="${stroke}" stroke-dasharray="${stroke * 3},${stroke * 2}"/>
+      <circle cx="${tc[0]}" cy="${-tc[1]}" r="${r1}" fill="rgba(52,84,209,0.16)" stroke="var(--primary)" stroke-width="${stroke * 1.5}"/>
+      <line x1="${tc[0] - r1 * 1.5}" y1="${-tc[1]}" x2="${tc[0] + r1 * 1.5}" y2="${-tc[1]}" stroke="var(--primary)" stroke-width="${stroke}"/>
+      <line x1="${tc[0]}" y1="${-tc[1] - r1 * 1.5}" x2="${tc[0]}" y2="${-tc[1] + r1 * 1.5}" stroke="var(--primary)" stroke-width="${stroke}"/>
+    </g>`;
+  }
+
+  // --- North arrow. Fixed straight up: the whole plan is already rotated
+  //     into the true-north frame, so "up" IS north by construction.
+  const ax = vb.x + vb.w * 0.93, ay = vb.y + vb.h * 0.11, al = unit * 0.07;
+  layers += `<g id="layer-north" class="plan-layer">
+    <line x1="${ax}" y1="${ay + al}" x2="${ax}" y2="${ay - al}" stroke="#1c2230" stroke-width="${stroke * 1.5}"/>
+    <polygon points="${ax},${ay - al * 1.5} ${ax - al * 0.34},${ay - al * 0.55} ${ax + al * 0.34},${ay - al * 0.55}" fill="#1c2230"/>
+    <text x="${ax}" y="${ay + al * 1.9}" font-size="${fontSize * 1.1}" font-weight="700" fill="#1c2230" text-anchor="middle">N</text>
+  </g>`;
+
+  const gridToggle = grid
+    ? `<label><input type="checkbox" class="plan-toggle" data-layer="layer-pada" checked> 81-pada grid</label>` : '';
+
+  return `
+  <div class="plan-viewer">
+    <div class="plan-toolbar">
+      <strong style="font-size:0.85rem;">Plan</strong>
+      <label><input type="checkbox" class="plan-toggle" data-layer="layer-rooms" checked> Rooms</label>
+      ${diag ? `<label><input type="checkbox" class="plan-toggle" data-layer="layer-centre" checked> Brahmasthan</label>` : ''}
+      ${gridToggle}
+      <label><input type="checkbox" class="plan-toggle" data-layer="layer-north" checked> North</label>
+    </div>
+    <svg class="plan-svg" viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}" preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="Floor plan oriented to true north, with rooms shaded by violation severity">${layers}</svg>
+    <div class="plan-caption">
+      Drawn in the true-north frame (rotated ${(-north).toFixed(1)}° from the plan as entered), so up is north.
+      Rooms are shaded by their worst scored violation${diag ? '; the crosshair is the true area centroid (Brahmasthan), the dashed circle the bounding-box centre' : ''}${result.mandala && result.mandala.entrance ? '; the purple pada is where the main entrance falls on the 32-cell perimeter ring' : ''}.
+    </div>
+  </div>`;
+}
+
+function bindPlanToggles() {
+  document.querySelectorAll('.plan-toggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const layer = document.getElementById(cb.dataset.layer);
+      if (layer) layer.style.display = cb.checked ? '' : 'none';
+    });
+  });
+}
+
+/* ===================== Extended-mode (mandala) results ===================== */
+function renderMandalaPanel(mandala) {
+  if (!mandala) return '';
+  if (mandala.error) {
+    return `<h3 class="section-title">Mandala layer</h3><div class="warning">${escapeHtml(mandala.error)}</div>`;
+  }
+
+  let html = `<h3 class="section-title">Mandala layer (81-pada)</h3>`;
+
+  const e = mandala.entrance;
+  if (e) {
+    const p = e.primary;
+    html += `<div class="entrance-callout">
+      <div class="big">Pada ${p.ring_index + 1} of ${e.ring_size} &middot; ${escapeHtml(p.side)} side</div>
+      <div class="muted" style="margin-top:0.2rem;">
+        Main entrance located on the perimeter ring by boundary intersection
+        (${Math.round(p.overlap_fraction * 100)}% of the opening in this pada${e.straddles_multiple_padas
+          ? `, straddling ${e.padas.length} padas` : ', not straddling'}).
+      </div>
+      <div class="muted" style="margin-top:0.45rem;">
+        <strong>Rating: ${p.rating == null ? 'not available' : escapeHtml(String(p.rating))}.</strong>
+        ${escapeHtml(e.disclaimer)}
+      </div>
+    </div>`;
+  } else if (mandala.entrance_note) {
+    html += `<div class="warning">${escapeHtml(mandala.entrance_note)}</div>`;
+  } else if (mandala.entrance_error) {
+    html += `<div class="warning">Entrance pada could not be located: ${escapeHtml(mandala.entrance_error)}</div>`;
+  }
+
+  const grid = mandala.pada_grid;
+  if (grid) {
+    const cells = grid.cells;
+    const inside = cells.filter(c => c.boundary_occupancy_fraction >= 0.999).length;
+    const partial = cells.filter(c => c.boundary_occupancy_fraction > 0 && c.boundary_occupancy_fraction < 0.999).length;
+    html += `<p class="muted">
+      ${grid.order}&times;${grid.order} grid = ${cells.length} padas:
+      <strong>${inside}</strong> fully inside the footprint,
+      <strong>${partial}</strong> partially cut,
+      <strong>${cells.length - inside - partial}</strong> outside it.
+      The grid is inscribed on the plot's bounding box — a documented product
+      choice, exact for rectangular plots and approximate for irregular ones.
+    </p>`;
+  }
+
+  const dev = mandala.devata_overlay;
+  if (dev) {
+    const named = dev.cells.filter(c => c.devata);
+    const occupied = named.filter(c => Object.keys(c.room_occupancy || {}).length);
+    html += `<details class="coverage-panel">
+      <summary>45-devata overlay — ${named.length} of ${dev.cells.length} padas named</summary>
+      <p class="muted" style="margin:0.6rem 0 0;">${escapeHtml(dev.disclaimer)}</p>
+      ${occupied.length ? `<ul class="coverage-excl">${occupied.map(c => `
+        <li><span class="layer">${escapeHtml(c.devata)}</span>
+        <span class="why">${Object.entries(c.room_occupancy).map(([n, f]) => `${escapeHtml(n)} ${Math.round(f * 100)}%`).join(' &middot; ')}</span></li>
+      `).join('')}</ul>` : `<p class="muted">No named pada currently has a room in it.</p>`}
+    </details>`;
+  }
+  return html;
+}
+
+function renderCoverageResultPanel(coverage) {
+  if (!coverage) return '';
+  return `<details class="coverage-panel">
+    <summary>Scope of this audit: ${escapeHtml(coverage.label)} — ${coverage.excluded.length} things it did not examine</summary>
+    <p class="muted" style="margin:0.6rem 0 0;">${escapeHtml(coverage.description)}</p>
+    <ul class="coverage-excl">
+      ${coverage.excluded.map(e => `
+        <li><span class="layer">${escapeHtml(e.layer)}</span><span class="status">${escapeHtml(e.status)}</span>
+        <span class="why">${escapeHtml(e.why)}</span></li>`).join('')}
+    </ul>
+    <p class="muted" style="margin:0.7rem 0 0;"><strong>${escapeHtml(coverage.claim_note)}</strong></p>
+  </details>`;
+}
+
 function renderResults(result) {
   const el = document.getElementById('results');
 
@@ -771,9 +1168,36 @@ function renderResults(result) {
     <div><span class="count-label">Minor violations</span><span class="count-value">${result.minor_count}</span></div>
   </div>`;
   html += `<div class="score-line">${result.compliance_score} <span>/ 100 compliance score</span></div>`;
-  html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.</p>`;
+
+  // Confidence band: how much of this score rests on rules the schema itself
+  // rates below "high" confidence. A wide band means the finding leans on
+  // contested rules — see vastu_audit.compute_score_range.
+  const band = result.compliance_score_range;
+  if (band && band.is_uncertain) {
+    html += `<p class="score-band">
+      Confidence band: <span class="band">${band.low}–${band.high}</span>.
+      The lower figure counts every violation; the upper counts only those resting on
+      rules the schema rates <em>high</em> confidence. The gap is what this result
+      owes to rules its own sources treat as contested.
+    </p>`;
+  } else if (band) {
+    html += `<p class="score-band">Every scored violation here rests on a <span class="band">high-confidence</span> schema rule.</p>`;
+  }
+
+  html += `<p class="muted">Score uses placeholder severity weights (major=10, minor=3) that are NOT from the schema and NOT validated by a consultant. Relative indicator only, not an authoritative percentage.`;
+  if (result.score_saturated) {
+    html += ` <strong>This layout's deductions (${result.total_deductions}) exceed the 100-point base, so the score has bottomed out at 0 — treat the violation counts above as the real signal.</strong>`;
+  }
+  html += `</p>`;
+
+  // The plan is drawn from the layout that produced this result, so what the
+  // reader sees always matches what was audited.
+  if (lastAuditedLayout) {
+    html += renderPlanViewer(result, lastAuditedLayout);
+  }
 
   html += renderShapeDiagnosisPanel(result.shape_diagnosis);
+  html += renderMandalaPanel(result.mandala);
 
   html += `<h3 class="section-title">Violations</h3>`;
   const allViolations = [];
@@ -834,8 +1258,13 @@ function renderResults(result) {
     });
   }
 
+  // Scope disclosure closes every report, so what the audit did NOT examine
+  // travels with the findings rather than living only on the input form.
+  html += renderCoverageResultPanel(result.coverage);
+
   html += '</div>';
   el.innerHTML = html;
+  bindPlanToggles();
 }
 
 async function runAudit() {
@@ -904,6 +1333,8 @@ async function loadFlatIntoForm(flatId) {
   document.getElementById('save-version-btn').disabled = false;
   setSaveStatus(`Loaded "${flat.label}" (v${latest.version_number}, ${flat.versions.length} version(s) total). Edit and save to add a new version.`, false);
 
+  // A loaded flat is drawn from its own stored input, not the live form.
+  lastAuditedLayout = latest.input || null;
   renderResults(latest.result);
 }
 
@@ -916,6 +1347,16 @@ function populateFormFromInput(input) {
   document.getElementById('facade-bearing').value = input.facade_bearing_deg || 0;
   document.getElementById('plot-boundary').value = input.boundary ? JSON.stringify(input.boundary) : '';
   document.getElementById('include-ritual').checked = !!input.include_ritual_protocol;
+
+  // Restore the depth the saved version was audited at, so re-saving doesn't
+  // silently downgrade a flat that was run in extended mode.
+  if (input.audit_mode) {
+    const modeInput = document.querySelector(`input[name="audit-mode"][value="${input.audit_mode}"]`);
+    if (modeInput && !modeInput.checked) {
+      modeInput.checked = true;
+      modeInput.dispatchEvent(new Event('change'));
+    }
+  }
 
   const furnitureDims = input.furniture_dimensions || {};
 

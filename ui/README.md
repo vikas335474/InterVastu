@@ -32,6 +32,70 @@ starting the server, or the session cookie won't be stored by the browser:
 VASTU_UI_INSECURE_COOKIES=1 uvicorn ui.server:app --reload
 ```
 
+## Analysis depth (the user picks; the product does not claim)
+
+`vastu_rule_schema.json`'s `known_gaps[2]` asked whether the product markets
+"full Vastu compliance" or "directional Vastu audit". The UI answers it by
+**not making the claim at all** — the user selects the depth, and every mode
+publishes what it does *and does not* examine.
+
+- **Directional Vastu audit** (default) — the 16-zone compass audit the rule
+  schema supports end to end: room zones, adjacency, Brahmasthan obstruction,
+  shape defects, object placement, placement suggestions.
+- **Extended mandala audit** — everything above, plus the 81-pada grid with
+  per-cell occupancy, the main entrance located on the 32-pada perimeter ring,
+  and the 45-devata overlay.
+
+Modes and their manifests are served from `/schema-info`, straight out of
+`genesis/engine/audit_modes.py` — the page hardcodes nothing, so the UI cannot
+drift from what the engine actually computes.
+
+**The anti-over-claim rule.** `audit_modes.UNIVERSAL_EXCLUSIONS` is attached to
+*every* mode, including the deepest, and is rendered both on the form and at the
+foot of every report. It names what no mode here covers: Ayadi Shadvarga, marma
+sthana, vithi shula, multi-storey variation, per-pada auspiciousness, and the
+outstanding consultant sign-off. Tests assert this for every mode
+(`test_audit_modes.py`, `test_server.py`), so a new mode cannot ship without its
+exclusions. Selecting the deeper mode buys higher-resolution *measurement*, not
+a verdict — the geometry is exact, the interpretation of it is not included
+because it is not sourced.
+
+Depth is strictly additive: `test_selected_mode_never_changes_the_directional_findings`
+asserts score, counts, rooms and plot-level findings are identical across modes.
+
+## Plan viewer
+
+Every result renders the flat as an SVG, drawn in the **true-north frame** —
+boundary, rooms and the pada grid are all rotated by `-facade_bearing` about the
+centroid, exactly as `geometry_engine.align_to_true_north` does server-side. So
+up is always north (how a Vastu plan is read), and the pada grid — computed in
+that same rotated frame — overlays the rooms without a second transform.
+
+- Rooms are shaded by their worst scored violation (red/amber/green), so the
+  drawing shows where the findings are instead of making the reader
+  cross-reference the list.
+- The true area centroid (Brahmasthan) is a crosshair; the bounding-box centre
+  is a dashed circle — their separation is the `high_center_offset` diagnostic
+  made visible.
+- In extended mode the 81 padas are drawn, with the entrance's pada highlighted.
+- Layers (rooms / Brahmasthan / pada grid / north) toggle independently.
+- Labels are sized to fit their own room and clamped inside the canvas; a room
+  too small for legible text (an entrance marker, say) gets a dot rather than a
+  name spilling across its neighbour.
+
+The viewer draws from the layout that produced the displayed result, not from
+the live form, so it always matches what was actually audited even after the
+form is edited.
+
+## Score confidence band
+
+When a result leans on rules the schema rates below `high` confidence, the score
+is shown as a band (e.g. "87–97"): the lower figure counts every violation, the
+upper counts only high-confidence ones. The gap is what the result owes to rules
+its own sources treat as contested. If the deductions exceed the 100-point base,
+the report says so explicitly rather than letting a bottomed-out 0 look like a
+precise measurement.
+
 ## Deploying (Render, free tier)
 
 `render.yaml` at the repo root is a Render Blueprint for this app: pip

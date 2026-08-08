@@ -504,3 +504,98 @@ def test_get_project_version_404_for_missing_version(admin_client):
 
     resp = admin_client.get(f"/projects/{project_id}/versions/99")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Audit depth selection (audit_modes) — the user's call, not the product's.
+# See genesis/engine/audit_modes.py for why this is a choice rather than a
+# claim the product makes on the user's behalf.
+# ---------------------------------------------------------------------------
+
+import json as _json
+from pathlib import Path as _Path
+
+_FIXTURE = _json.loads(
+    (_Path(__file__).parent.parent.parent / "genesis" / "engine" / "fixtures"
+     / "flat_unit12_polygons.json").read_text()
+)
+
+
+def _geometry_payload(**extra):
+    return {
+        "plot": {"shape": "rectangle", "brahmasthan_obstructed": False},
+        "rooms": _FIXTURE["rooms"],
+        "boundary": _FIXTURE["boundary"],
+        "facade_bearing_deg": _FIXTURE["north_offset_deg"],
+        **extra,
+    }
+
+
+def test_schema_info_advertises_selectable_modes(client):
+    body = client.get("/schema-info").json()
+    modes = {m["mode"] for m in body["audit_modes"]}
+    assert modes == {"directional", "full_mandala"}
+    assert body["default_audit_mode"] == "directional"
+    # Every advertised mode states its own limits, on the form as well as
+    # in the result.
+    for m in body["audit_modes"]:
+        assert m["excluded"]
+
+
+def test_audit_defaults_to_directional_and_omits_the_mandala_layer(client):
+    body = client.post("/audit", json=_geometry_payload()).json()
+    assert body["audit_mode"] == "directional"
+    assert "mandala" not in body
+
+
+def test_full_mandala_mode_adds_the_pada_layer(client):
+    body = client.post("/audit", json=_geometry_payload(audit_mode="full_mandala")).json()
+    assert body["audit_mode"] == "full_mandala"
+    assert len(body["mandala"]["pada_grid"]["cells"]) == 81
+    assert body["mandala"]["entrance"]["ring_size"] == 32
+
+
+def test_selected_mode_never_changes_the_directional_findings(client):
+    """Depth is additive: the extended mode must not alter the audit beneath it."""
+    directional = client.post("/audit", json=_geometry_payload(audit_mode="directional")).json()
+    extended = client.post("/audit", json=_geometry_payload(audit_mode="full_mandala")).json()
+    for key in ("compliance_score", "major_count", "minor_count", "rooms", "plot_level"):
+        assert directional[key] == extended[key], f"{key} differed between modes"
+
+
+@pytest.mark.parametrize("bogus", ["nonsense", "", 42, {}, [], None])
+def test_unknown_audit_mode_degrades_instead_of_erroring(client, bogus):
+    """This value comes straight off the wire — including unhashable JSON types."""
+    resp = client.post("/audit", json=_geometry_payload(audit_mode=bogus))
+    assert resp.status_code == 200
+    assert resp.json()["audit_mode"] == "directional"
+
+
+@pytest.mark.parametrize("mode", ["directional", "full_mandala"])
+def test_every_response_states_what_it_did_not_examine(client, mode):
+    """No response, at any depth, may read as a completeness claim."""
+    body = client.post("/audit", json=_geometry_payload(audit_mode=mode)).json()
+    layers = {e["layer"] for e in body["coverage"]["excluded"]}
+    assert any("Ayadi" in l for l in layers)
+    assert any("sign-off" in l for l in layers)
+    assert "not a certificate" in body["coverage"]["claim_note"].lower()
+
+
+def test_saved_flat_round_trips_its_audit_mode(auth_client):
+    created = auth_client.post(
+        "/flats", json={"label": "Unit 12", **_geometry_payload(audit_mode="full_mandala")}
+    ).json()
+    assert created["input"]["audit_mode"] == "full_mandala"
+
+    flat = auth_client.get(f"/flats/{created['flat_id']}").json()
+    assert flat["versions"][-1]["input"]["audit_mode"] == "full_mandala"
+
+
+def test_mandala_layer_without_boundary_degrades_gracefully(client):
+    payload = _geometry_payload(audit_mode="full_mandala")
+    payload["boundary"] = None
+    body = client.post("/audit", json=payload).json()
+    assert body["audit_mode"] == "full_mandala"
+    assert "error" in body["mandala"]
+    # The directional audit is unaffected.
+    assert "compliance_score" in body
